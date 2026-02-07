@@ -1,0 +1,396 @@
+
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { MOCK_ASSETS, ASSET_CATEGORIES, ORGANIZATIONAL_UNITS } from './constants';
+import { Asset, AssetStatus, AuditLog, AssetLocation, AssetCategory, DatabaseConfig } from './types';
+import AssetDashboard from './components/AssetDashboard';
+import AssetForm from './components/AssetForm';
+import ReportingSuite from './components/ReportingSuite';
+import AuditTrailView from './components/AuditTrailView';
+import ScannerModal from './components/ScannerModal';
+import JournalManager from './components/JournalManager';
+import ImportManager from './components/ImportManager';
+import CategoryManager from './components/CategoryManager';
+import LocationManager from './components/LocationManager';
+import { createClient } from '@supabase/supabase-js';
+import { 
+  LayoutDashboard, 
+  Database, 
+  Map, 
+  FileBarChart, 
+  Plus, 
+  History,
+  Scan,
+  BookMarked,
+  FileUp,
+  Settings,
+  ShieldCheck,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  CloudUpload,
+  CalendarDays,
+  UserCircle,
+  ChevronDown,
+  // Added missing CheckCircle import for user profile update confirmation
+  CheckCircle
+} from 'lucide-react';
+import { format, startOfYear } from 'date-fns';
+
+type Tab = 'dashboard' | 'register' | 'locations' | 'reports' | 'journals' | 'import' | 'audit' | 'settings';
+
+const App: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [isAutoSyncing, setIsAutoSyncing] = useState(false);
+  const [hasSyncedInitial, setHasSyncedInitial] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<{status: 'idle' | 'success' | 'error' | 'connecting', message?: string}>({status: 'idle'});
+  
+  // User Profile State
+  const [currentUser, setCurrentUser] = useState<string>(() => {
+    return localStorage.getItem('shuku_current_user') || 'Admin';
+  });
+  const [isChangingUser, setIsChangingUser] = useState(false);
+
+  // Date Filtering State
+  const now = new Date();
+  const [startDate, setStartDate] = useState(format(startOfYear(now), 'yyyy-MM-dd'));
+  const [endDate, setEndDate] = useState(format(now, 'yyyy-MM-dd'));
+
+  const [assets, setAssets] = useState<Asset[]>(() => {
+    const saved = localStorage.getItem('shuku_assets_v2');
+    return saved ? JSON.parse(saved) : MOCK_ASSETS;
+  });
+  
+  const [categories, setCategories] = useState<AssetCategory[]>(() => {
+    const saved = localStorage.getItem('shuku_categories_v2');
+    return saved ? JSON.parse(saved) : ASSET_CATEGORIES;
+  });
+  
+  const [locations, setLocations] = useState<AssetLocation[]>(() => {
+    const saved = localStorage.getItem('shuku_locations_v2');
+    return saved ? JSON.parse(saved) : ORGANIZATIONAL_UNITS;
+  });
+
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
+    const saved = localStorage.getItem('shuku_audit_v2');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [dbConfig, setDbConfig] = useState<DatabaseConfig>(() => {
+    const saved = localStorage.getItem('shuku_db_config_v2');
+    return saved ? JSON.parse(saved) : { enabled: false, supabaseUrl: '', supabaseKey: '' };
+  });
+
+  const supabase = useMemo(() => {
+    if (dbConfig.enabled && dbConfig.supabaseUrl && dbConfig.supabaseKey) {
+      try {
+        return createClient(dbConfig.supabaseUrl, dbConfig.supabaseKey, {
+          auth: { persistSession: false }
+        });
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }, [dbConfig.enabled, dbConfig.supabaseUrl, dbConfig.supabaseKey]);
+
+  const pullFromPostgres = useCallback(async (force = false) => {
+    if (!supabase) return;
+    setSyncLoading(true);
+    setConnectionStatus({status: 'connecting'});
+    
+    try {
+      const [{ data: catData, error: catError }, { data: locData, error: locError }, { data: assetData, error: assetError }] = await Promise.all([
+        supabase.from('categories').select('*'),
+        supabase.from('locations').select('*'),
+        supabase.from('assets').select('*')
+      ]);
+
+      if (catError || locError || assetError) throw new Error("Connection Refused");
+
+      if (catData && catData.length > 0) setCategories(catData);
+      if (locData && locData.length > 0) setLocations(locData);
+      if (assetData && assetData.length > 0) setAssets(assetData);
+      
+      setDbConfig(prev => ({ ...prev, lastSync: new Date().toISOString() }));
+      setHasSyncedInitial(true);
+      setConnectionStatus({status: 'success', message: 'Engine Online'});
+      
+      if (force) alert("PULL SUCCESS. Local data synced with cloud.");
+    } catch (err: any) {
+      setConnectionStatus({status: 'error', message: 'Connection Error'});
+      if (force) alert("SYNC ERROR: Check your URL/Key or Docker status.");
+    } finally {
+      setSyncLoading(false);
+    }
+  }, [supabase]);
+
+  const pushToPostgres = useCallback(async (isAuto = false) => {
+    if (!supabase || !dbConfig.enabled || !hasSyncedInitial) return;
+
+    if (isAuto) setIsAutoSyncing(true);
+    else setSyncLoading(true);
+
+    try {
+      await Promise.all([
+        supabase.from('categories').upsert(categories),
+        supabase.from('locations').upsert(locations),
+        supabase.from('assets').upsert(assets)
+      ]);
+      setDbConfig(prev => ({ ...prev, lastSync: new Date().toISOString() }));
+    } catch (err: any) {
+      console.error("Push Error", err);
+    } finally {
+      setIsAutoSyncing(false);
+      setSyncLoading(false);
+    }
+  }, [supabase, assets, categories, locations, dbConfig.enabled, hasSyncedInitial]);
+
+  useEffect(() => {
+    if (dbConfig.enabled && supabase && !hasSyncedInitial) {
+      pullFromPostgres(false);
+    }
+  }, [dbConfig.enabled, supabase, hasSyncedInitial, pullFromPostgres]);
+
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!dbConfig.enabled || !supabase || !hasSyncedInitial) return;
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(() => pushToPostgres(true), 3000);
+    return () => { if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current); };
+  }, [assets, categories, locations, dbConfig.enabled, supabase, pushToPostgres, hasSyncedInitial]);
+
+  useEffect(() => {
+    localStorage.setItem('shuku_assets_v2', JSON.stringify(assets));
+    localStorage.setItem('shuku_categories_v2', JSON.stringify(categories));
+    localStorage.setItem('shuku_locations_v2', JSON.stringify(locations));
+    localStorage.setItem('shuku_audit_v2', JSON.stringify(auditLogs));
+    localStorage.setItem('shuku_db_config_v2', JSON.stringify(dbConfig));
+    localStorage.setItem('shuku_current_user', currentUser);
+  }, [assets, categories, locations, auditLogs, dbConfig, currentUser]);
+
+  const [editingAsset, setEditingAsset] = useState<Asset | undefined>();
+  const [isScanning, setIsScanning] = useState(false);
+
+  const logAction = (assetId: string, action: string, changes: any[]) => {
+    const newLog: AuditLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: new Date().toISOString(),
+      userId: currentUser,
+      assetId,
+      action,
+      changes
+    };
+    setAuditLogs(prev => [...prev, newLog]);
+  };
+
+  const handleSaveAsset = (newAsset: Asset) => {
+    if (editingAsset && editingAsset.id) {
+      setAssets(assets.map(a => a.id === newAsset.id ? newAsset : a));
+      logAction(newAsset.id, 'UPDATE', [{ field: 'Asset Details', oldValue: 'Modified', newValue: 'Current' }]);
+    } else {
+      setAssets([...assets, newAsset]);
+      logAction(newAsset.id, 'CREATE', [{ field: 'Asset', oldValue: 'N/A', newValue: newAsset.name }]);
+    }
+    setEditingAsset(undefined);
+    setActiveTab('register');
+  };
+
+  const currencyFormatter = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' });
+
+  return (
+    <div className="min-h-screen flex bg-[#f8fafc]">
+      <aside className="no-print w-64 bg-[#0f172a] text-white flex flex-col shrink-0 border-r border-slate-800">
+        <div className="p-6 border-b border-slate-800 bg-[#1e293b]">
+          <h1 className="text-xl font-black flex items-center gap-2 tracking-tighter">
+            <ShieldCheck className="text-emerald-400" size={24} /> SHUKU ASSETS
+          </h1>
+          <p className="text-[9px] text-emerald-400 uppercase font-black tracking-widest mt-1">Lupo Bakery Edition</p>
+        </div>
+        
+        <nav className="flex-grow p-4 space-y-1">
+          <SectionTitle>Operations</SectionTitle>
+          <NavItem active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={LayoutDashboard} label="Dashboard" />
+          <NavItem active={activeTab === 'register'} onClick={() => setActiveTab('register')} icon={Database} label="Asset Register" />
+          <NavItem active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} icon={Map} label="Locations" />
+          <SectionTitle>Compliance</SectionTitle>
+          <NavItem active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} icon={FileBarChart} label="IFRS & SARS Reports" />
+          <NavItem active={activeTab === 'journals'} onClick={() => setActiveTab('journals')} icon={BookMarked} label="GL Journals" />
+          <SectionTitle>System</SectionTitle>
+          <NavItem active={activeTab === 'import'} onClick={() => setActiveTab('import')} icon={FileUp} label="Bulk Data Import" />
+          <NavItem active={activeTab === 'audit'} onClick={() => setActiveTab('audit')} icon={History} label="Audit Trail" />
+          <NavItem active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={Settings} label="System Config" />
+        </nav>
+
+        <div className="p-6 mt-auto border-t border-slate-800 bg-[#1e293b]/50">
+          <div className="flex flex-col gap-1">
+              {dbConfig.enabled ? (
+                <>
+                  <span className={`text-[10px] font-bold uppercase flex items-center gap-1.5 ${connectionStatus.status === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {(isAutoSyncing || syncLoading) ? <RefreshCw size={12} className="animate-spin" /> : <Cloud size={12} />}
+                    {isAutoSyncing ? 'Syncing...' : connectionStatus.status === 'error' ? 'Offline' : 'Connected'}
+                  </span>
+                  {dbConfig.lastSync && <span className="text-[8px] text-slate-500">Last: {format(new Date(dbConfig.lastSync), 'HH:mm')}</span>}
+                </>
+              ) : (
+                <span className="text-[10px] text-slate-500 font-bold uppercase flex items-center gap-1.5"><CloudOff size={12} /> Local Storage</span>
+              )}
+          </div>
+        </div>
+      </aside>
+
+      <main className="flex-grow flex flex-col overflow-hidden">
+        <header className="no-print bg-white border-b border-slate-200 h-16 flex items-center justify-between px-8 shrink-0 shadow-sm z-10">
+          <div className="flex items-center gap-6">
+            <h2 className="text-slate-800 font-black text-sm uppercase tracking-widest min-w-[120px]">
+              {activeTab === 'settings' ? 'System Settings' : activeTab.replace('register', 'Asset Register')}
+            </h2>
+            
+            {(activeTab === 'dashboard' || activeTab === 'reports' || activeTab === 'journals') && (
+              <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                <CalendarDays size={14} className="text-slate-400" />
+                <div className="flex items-center gap-1">
+                  <input 
+                    type="date" 
+                    value={startDate} 
+                    onChange={(e) => setStartDate(e.target.value)} 
+                    className="bg-transparent text-[10px] font-bold text-slate-600 outline-none w-28 uppercase"
+                  />
+                  <span className="text-slate-300 text-xs">→</span>
+                  <input 
+                    type="date" 
+                    value={endDate} 
+                    onChange={(e) => setEndDate(e.target.value)} 
+                    className="bg-transparent text-[10px] font-bold text-slate-600 outline-none w-28 uppercase"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-6">
+            {isAutoSyncing && (
+              <div className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg border border-emerald-100 animate-pulse">
+                <CloudUpload size={14} />
+                <span className="text-[10px] font-black uppercase tracking-widest">Auto-Sync</span>
+              </div>
+            )}
+            
+            <div className="flex items-center gap-4">
+               <div className="flex items-center gap-2 relative">
+                  {isChangingUser ? (
+                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-xl border border-blue-200 shadow-sm animate-in fade-in zoom-in-95">
+                      <input 
+                        autoFocus
+                        type="text"
+                        value={currentUser}
+                        onChange={(e) => setCurrentUser(e.target.value)}
+                        onBlur={() => setIsChangingUser(false)}
+                        onKeyDown={(e) => e.key === 'Enter' && setIsChangingUser(false)}
+                        className="bg-transparent text-xs font-black uppercase tracking-widest outline-none w-32"
+                      />
+                      <button onClick={() => setIsChangingUser(false)} className="text-blue-600 hover:text-blue-800">
+                        <CheckCircle size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => setIsChangingUser(true)}
+                      className="flex items-center gap-3 bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 transition-all group"
+                    >
+                      <div className="bg-white p-1 rounded-full shadow-sm text-slate-400 group-hover:text-blue-600 transition-colors">
+                        <UserCircle size={16} />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Logged as</p>
+                        <p className="text-[10px] font-black text-slate-700 uppercase tracking-tighter flex items-center gap-1">
+                          {currentUser} <ChevronDown size={10} className="text-slate-300" />
+                        </p>
+                      </div>
+                    </button>
+                  )}
+               </div>
+
+               <div className="h-8 w-[1px] bg-slate-200"></div>
+
+               <div className="flex items-center gap-2">
+                 <button onClick={() => setIsScanning(true)} className="text-slate-500 hover:text-blue-600 p-2 transition-colors bg-slate-50 rounded-lg border border-slate-200"><Scan size={20} /></button>
+                 <button onClick={() => { setEditingAsset({} as Asset); setActiveTab('register'); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"><Plus size={18} /> Add Asset</button>
+               </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="flex-grow overflow-auto p-8 custom-scrollbar">
+          {editingAsset ? (
+            <AssetForm asset={editingAsset.id ? editingAsset : undefined} onSave={handleSaveAsset} onCancel={() => setEditingAsset(undefined)} existingAssets={assets} categories={categories} locations={locations} />
+          ) : (
+            <>
+              {activeTab === 'dashboard' && <AssetDashboard assets={assets} categories={categories} locations={locations} reportDate={endDate} />}
+              {activeTab === 'register' && <AssetTable assets={assets} onEdit={setEditingAsset} currencyFormatter={currencyFormatter} />}
+              {activeTab === 'locations' && <LocationManager locations={locations} onUpdate={setLocations} assets={assets} />}
+              {activeTab === 'reports' && <ReportingSuite assets={assets} categories={categories} locations={locations} startDate={startDate} endDate={endDate} />}
+              {activeTab === 'journals' && <JournalManager assets={assets} categories={categories} locations={locations} selectedMonth={format(new Date(endDate), 'yyyy-MM')} />}
+              {activeTab === 'import' && <ImportManager onImport={(a) => setAssets([...assets, ...a])} />}
+              {activeTab === 'audit' && <AuditTrailView logs={auditLogs} assets={assets} />}
+              {activeTab === 'settings' && <CategoryManager categories={categories} onUpdate={setCategories} dbConfig={dbConfig} onUpdateDb={setDbConfig} onForcePush={() => pushToPostgres(false)} onForcePull={() => pullFromPostgres(true)} onTestConnection={() => pullFromPostgres(true)} connectionStatus={connectionStatus} syncLoading={syncLoading} />}
+            </>
+          )}
+        </div>
+      </main>
+
+      {isScanning && <ScannerModal onScan={(id) => { const a = assets.find(x => x.tagId === id); if(a) setEditingAsset(a); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
+    </div>
+  );
+};
+
+const SectionTitle: React.FC<React.PropsWithChildren<{}>> = ({ children }) => (
+  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest pt-6 pb-2 px-4 border-t border-slate-800/50 mt-4 first:mt-0 first:border-0">{children}</p>
+);
+
+const NavItem = ({ active, onClick, icon: Icon, label }: any) => (
+  <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${active ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
+    <Icon size={18} /> <span className="text-xs font-bold uppercase tracking-tight">{label}</span>
+  </button>
+);
+
+const AssetTable = ({ assets, onEdit, currencyFormatter }: any) => (
+  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <table className="w-full text-sm">
+      <thead className="bg-slate-50 text-slate-500 font-black uppercase text-[10px] tracking-widest border-b border-slate-200">
+        <tr>
+          <th className="px-6 py-5 text-left">Asset Reference</th>
+          <th className="px-6 py-5 text-left">Description</th>
+          <th className="px-6 py-5 text-right">Carrying Value</th>
+          <th className="px-6 py-5 text-right">Management</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {assets.length === 0 ? (
+          <tr><td colSpan={4} className="px-6 py-24 text-center text-slate-300 font-bold uppercase tracking-widest">No assets found</td></tr>
+        ) : (
+          assets.map((a: Asset) => (
+            <tr key={a.id} className="hover:bg-blue-50/30 transition-colors group">
+              <td className="px-6 py-4">
+                <span className="font-black text-blue-600 tracking-tighter">{a.assetNumber}</span>
+                <span className="block text-[9px] text-slate-400 font-mono mt-0.5">{a.tagId || 'No Tag'}</span>
+              </td>
+              <td className="px-6 py-4">
+                <span className="font-bold text-slate-800 block">{a.name}</span>
+                <span className="text-[10px] text-slate-400 line-clamp-1">{a.description}</span>
+              </td>
+              <td className="px-6 py-4 text-right font-black text-slate-700 font-mono">
+                {currencyFormatter.format(a.components.reduce((s,c) => s + (c.cost + (c.revaluations?.reduce((sum, r) => r.newFairValue - c.cost, 0) || 0) - (c.impairmentLoss || 0)), 0))}
+              </td>
+              <td className="px-6 py-4 text-right">
+                <button onClick={() => onEdit(a)} className="bg-slate-100 text-slate-600 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">View Detail</button>
+              </td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
+  </div>
+);
+
+export default App;

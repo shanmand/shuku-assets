@@ -1,0 +1,7 @@
+{
+  "name": "Shuku Assets",
+  "description": "Enterprise Asset Tracking System licensed to Lupo Bakery. IFRS and SARS compliant.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
