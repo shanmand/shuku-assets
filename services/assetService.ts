@@ -2,6 +2,9 @@
 import { differenceInDays, isBefore, isAfter, isValid } from 'date-fns';
 import { Asset, DepreciationCalculation, AssetComponent, TaxStrategy, AssetCategory, AssetStatus } from '../types';
 
+const FISCAL_YEAR_END_MONTH = 5; // June (0-indexed in JS)
+const FISCAL_YEAR_END_DAY = 30;
+
 const subDays = (date: Date, amount: number): Date => {
   const result = new Date(date);
   result.setDate(result.getDate() - amount);
@@ -14,6 +17,19 @@ const startOfDay = (date: Date): Date => {
   return result;
 };
 
+/**
+ * Returns the fiscal year for a given date based on June 30th end.
+ * e.g. 2023-06-15 is FY 2023. 2023-07-01 is FY 2024.
+ */
+const getFiscalYear = (date: Date): number => {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  if (month <= FISCAL_YEAR_END_MONTH) {
+    return year;
+  }
+  return year + 1;
+};
+
 const getTaxYearDeduction = (
   comp: AssetComponent, 
   strategy: TaxStrategy, 
@@ -24,7 +40,7 @@ const getTaxYearDeduction = (
   switch (strategy) {
     case TaxStrategy.SARS_12C_40_20:
       if (taxYear === 1) return comp.cost * 0.40;
-      if (taxYear <= 4) return comp.cost * 0.20;
+      if (taxYear >= 2 && taxYear <= 4) return comp.cost * 0.20;
       return 0;
     case TaxStrategy.SARS_12B_50_30_20:
       if (taxYear === 1) return comp.cost * 0.50;
@@ -34,6 +50,7 @@ const getTaxYearDeduction = (
     case TaxStrategy.SARS_FULL_100:
       return taxYear === 1 ? comp.cost : 0;
     case TaxStrategy.SARS_13_5:
+      // Section 13 is typically 5% straight line per annum
       return taxYear <= 20 ? comp.cost * 0.05 : 0;
     default:
       return 0;
@@ -62,7 +79,6 @@ const calculateComponentDepreciation = (
     const effectiveDeprEnd = dispDate && isAfter(normalizedTarget, subDays(dispDate, 1)) ? subDays(dispDate, 1) : normalizedTarget;
     const daysHeld = Math.max(0, differenceInDays(effectiveDeprEnd, acqDate) + 1);
     
-    // Check for revaluations up to this target date
     const relevantRevals = (comp.revaluations || [])
       .filter(r => !isAfter(startOfDay(new Date(r.date)), normalizedTarget))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -92,14 +108,20 @@ const calculateComponentDepreciation = (
     }
 
     const daysHeld = Math.max(0, differenceInDays(normalizedTarget, acqDate) + 1);
-    const yearsDiff = differenceInDays(normalizedTarget, acqDate) / 365.25;
-    const currentTaxYear = Math.floor(yearsDiff) + 1;
+    
+    // Calculate Fiscal Year based Tax Year Index
+    const fyAcq = getFiscalYear(acqDate);
+    const fyTarget = getFiscalYear(normalizedTarget);
+    const currentTaxYear = Math.max(1, fyTarget - fyAcq + 1);
+    
     let accumTaxDepr = 0;
 
     if (category.taxStrategy === TaxStrategy.STANDARD_FLAT) {
+      // Pro-rated Section 11(e) wear and tear
       const annualTaxDepr = comp.cost * (category.defaultTaxRate / 100);
       accumTaxDepr = Math.min(comp.cost, (annualTaxDepr / 365.25) * daysHeld);
     } else {
+      // Accelerated Allowances (12B, 12C, 13)
       for (let y = 1; y <= currentTaxYear; y++) {
         accumTaxDepr += getTaxYearDeduction(comp, category.taxStrategy, y);
       }

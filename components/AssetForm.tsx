@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Asset, AssetStatus, AssetComponent, AssetLocation, AssetCategory, TaxStrategy } from '../types';
-import { Tag, Plus, Trash2, Box, MapPin, XCircle, CheckCircle, AlertTriangle, Hammer, Ban, Truck, Receipt, Phone, ShieldCheck, Calendar, Wallet, FileText, Info } from 'lucide-react';
+import { Tag, Plus, Trash2, Box, MapPin, XCircle, CheckCircle, AlertTriangle, Hammer, Ban, Truck, Receipt, Phone, ShieldCheck, Calendar, Wallet, FileText, Info, Clock, Percent, Calculator } from 'lucide-react';
 
 interface AssetFormProps {
   asset?: Asset;
@@ -28,12 +28,10 @@ const AssetForm: React.FC<AssetFormProps> = ({ asset, onSave, onCancel, existing
 
   const branches = useMemo(() => locations.filter(u => u.type === 'Branch'), [locations]);
   
-  // Filter functional locations based on selected branch
   const filteredFunctionalLocations = useMemo(() => {
     return locations.filter(l => l.type === 'Location' && l.parentId === formData.branchId);
   }, [locations, formData.branchId]);
 
-  // Filter sub-locations based on selected functional location
   const filteredSubLocations = useMemo(() => {
     return locations.filter(l => l.type === 'Sublocation' && l.parentId === formData.locationId);
   }, [locations, formData.locationId]);
@@ -105,14 +103,7 @@ const AssetForm: React.FC<AssetFormProps> = ({ asset, onSave, onCancel, existing
     setFormData(prev => {
       const updatedComponents = prev.components?.map(c => {
         if (c.id === id) {
-          const newComp = { ...c, ...updates };
-          if (updates.cost !== undefined) {
-             const category = categories.find(cat => cat.id === prev.categoryId);
-             if (category) {
-               newComp.residualValue = (updates.cost * category.residualPercentage) / 100;
-             }
-          }
-          return newComp;
+          return { ...c, ...updates };
         }
         return c;
       });
@@ -323,8 +314,29 @@ const AssetForm: React.FC<AssetFormProps> = ({ asset, onSave, onCancel, existing
                           </div>
                         </div>
 
+                        {/* Lifecycle & Tax Override Section */}
+                        <div className="pt-6 mt-6 border-t border-slate-100">
+                          <h5 className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+                            <Calculator size={14} /> Financial Lifecycle & Compliance Override
+                          </h5>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div>
+                              <label className="flex items-center gap-1.5 text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5"><Clock size={12} /> Useful Life (Yrs)</label>
+                              <input type="number" disabled={isRetired} className="w-full text-xs font-bold bg-white border border-slate-100 rounded-xl px-4 py-2.5 outline-none focus:border-blue-200 transition-all disabled:opacity-50" value={comp.usefulLifeYears} onChange={e => updateComponent(comp.id, { usefulLifeYears: Number(e.target.value) })} />
+                            </div>
+                            <div>
+                              <label className="flex items-center gap-1.5 text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5"><Percent size={12} /> Residual Value (R)</label>
+                              <input type="number" disabled={isRetired} className="w-full text-xs font-bold bg-white border border-slate-100 rounded-xl px-4 py-2.5 outline-none focus:border-blue-200 transition-all disabled:opacity-50" value={comp.residualValue} onChange={e => updateComponent(comp.id, { residualValue: Number(e.target.value) })} />
+                            </div>
+                            <div>
+                              <label className="flex items-center gap-1.5 text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5"><ShieldCheck size={12} /> Tax Rate (%)</label>
+                              <input type="number" disabled={isRetired} className="w-full text-xs font-bold bg-white border border-slate-100 rounded-xl px-4 py-2.5 outline-none focus:border-blue-200 transition-all disabled:opacity-50" value={comp.taxRate} onChange={e => updateComponent(comp.id, { taxRate: Number(e.target.value) })} />
+                            </div>
+                          </div>
+                        </div>
+
                         {/* Supplier Section */}
-                        <div className="pt-6 mt-6 border-t border-slate-50 grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="pt-6 mt-6 border-t border-slate-100 grid grid-cols-1 md:grid-cols-3 gap-6">
                           <div>
                             <label className="flex items-center gap-1.5 text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5"><Truck size={12} /> Supplier Name</label>
                             <input type="text" placeholder="Bakery Solutions ZAR" disabled={isRetired} className="w-full text-xs font-bold bg-white border border-slate-100 rounded-xl px-4 py-2.5 outline-none focus:border-blue-200 transition-all disabled:opacity-50" value={comp.supplierName || ''} onChange={e => updateComponent(comp.id, { supplierName: e.target.value })} />
