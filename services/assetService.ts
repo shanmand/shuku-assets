@@ -86,16 +86,25 @@ const calculateComponentDepreciation = (
     const totalRevalImpact = relevantRevals.reduce((acc, curr) => curr.newFairValue - comp.cost, 0);
     const totalImpairment = (comp.impairmentLoss || 0);
 
-    const depreciableAmount = (comp.cost + totalRevalImpact - totalImpairment) - comp.residualValue;
+    // IFRS DEPRECIATION LOGIC: Base must stop at Residual Value
+    const grossCarryingAmount = comp.cost + totalRevalImpact - totalImpairment;
+    const residual = comp.residualValue || 0;
+    
+    // Depreciable amount is the portion that can be written off
+    const depreciableAmount = Math.max(0, grossCarryingAmount - residual);
+    
     const annualDepr = comp.usefulLifeYears > 0 ? depreciableAmount / comp.usefulLifeYears : 0;
     const dailyDeprRate = annualDepr / 365.25;
-    const accumDepr = Math.min(Math.max(0, depreciableAmount), dailyDeprRate * daysHeld);
+    
+    // Cap accumulated depreciation at the depreciable amount to ensure carrying value >= residual
+    const accumDepr = Math.min(depreciableAmount, dailyDeprRate * daysHeld);
     
     return { 
       cost: comp.cost, 
       accumDepr, 
       impairments: totalImpairment, 
-      revaluations: totalRevalImpact 
+      revaluations: totalRevalImpact,
+      residual
     };
   };
 
@@ -184,7 +193,7 @@ const calculateComponentDepreciation = (
     periodicDepr,
     accumulatedDeprOnDisposals: accumDeprOnDisp,
     closingAccumulatedDepr: ifrsCl.accumDepr,
-    nbv: (ifrsCl.cost + ifrsCl.revaluations - ifrsCl.impairments) - ifrsCl.accumDepr,
+    nbv: Math.max(ifrsCl.residual, (ifrsCl.cost + ifrsCl.revaluations - ifrsCl.impairments) - ifrsCl.accumDepr),
     taxValue: sarsCl.taxValue,
     taxDeductionForPeriod: taxDedForPeriod,
     openingAccumulatedTaxDepr: sarsOp.accumTaxDepr,

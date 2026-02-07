@@ -103,7 +103,17 @@ const AssetForm: React.FC<AssetFormProps> = ({ asset, onSave, onCancel, existing
     setFormData(prev => {
       const updatedComponents = prev.components?.map(c => {
         if (c.id === id) {
-          return { ...c, ...updates };
+          const updatedComp = { ...c, ...updates };
+          
+          // AUTO-RECALCULATE RESIDUAL IF COST CHANGED
+          if (updates.cost !== undefined) {
+            const category = categories.find(cat => cat.id === prev.categoryId);
+            if (category) {
+              updatedComp.residualValue = (updates.cost * category.residualPercentage) / 100;
+            }
+          }
+          
+          return updatedComp;
         }
         return c;
       });
