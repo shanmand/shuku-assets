@@ -31,8 +31,10 @@ import {
   CalendarDays,
   UserCircle,
   ChevronDown,
-  // Added missing CheckCircle import for user profile update confirmation
-  CheckCircle
+  CheckCircle,
+  Search,
+  X,
+  Filter
 } from 'lucide-react';
 import { format, startOfYear } from 'date-fns';
 
@@ -327,7 +329,7 @@ const App: React.FC = () => {
           ) : (
             <>
               {activeTab === 'dashboard' && <AssetDashboard assets={assets} categories={categories} locations={locations} reportDate={endDate} />}
-              {activeTab === 'register' && <AssetTable assets={assets} onEdit={setEditingAsset} currencyFormatter={currencyFormatter} />}
+              {activeTab === 'register' && <AssetTable assets={assets} onEdit={setEditingAsset} currencyFormatter={currencyFormatter} categories={categories} />}
               {activeTab === 'locations' && <LocationManager locations={locations} onUpdate={setLocations} assets={assets} />}
               {activeTab === 'reports' && <ReportingSuite assets={assets} categories={categories} locations={locations} startDate={startDate} endDate={endDate} />}
               {activeTab === 'journals' && <JournalManager assets={assets} categories={categories} locations={locations} selectedMonth={format(new Date(endDate), 'yyyy-MM')} />}
@@ -354,43 +356,116 @@ const NavItem = ({ active, onClick, icon: Icon, label }: any) => (
   </button>
 );
 
-const AssetTable = ({ assets, onEdit, currencyFormatter }: any) => (
-  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-    <table className="w-full text-sm">
-      <thead className="bg-slate-50 text-slate-500 font-black uppercase text-[10px] tracking-widest border-b border-slate-200">
-        <tr>
-          <th className="px-6 py-5 text-left">Asset Reference</th>
-          <th className="px-6 py-5 text-left">Description</th>
-          <th className="px-6 py-5 text-right">Carrying Value</th>
-          <th className="px-6 py-5 text-right">Management</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100">
-        {assets.length === 0 ? (
-          <tr><td colSpan={4} className="px-6 py-24 text-center text-slate-300 font-bold uppercase tracking-widest">No assets found</td></tr>
-        ) : (
-          assets.map((a: Asset) => (
-            <tr key={a.id} className="hover:bg-blue-50/30 transition-colors group">
-              <td className="px-6 py-4">
-                <span className="font-black text-blue-600 tracking-tighter">{a.assetNumber}</span>
-                <span className="block text-[9px] text-slate-400 font-mono mt-0.5">{a.tagId || 'No Tag'}</span>
-              </td>
-              <td className="px-6 py-4">
-                <span className="font-bold text-slate-800 block">{a.name}</span>
-                <span className="text-[10px] text-slate-400 line-clamp-1">{a.description}</span>
-              </td>
-              <td className="px-6 py-4 text-right font-black text-slate-700 font-mono">
-                {currencyFormatter.format(a.components.reduce((s,c) => s + (c.cost + (c.revaluations?.reduce((sum, r) => r.newFairValue - c.cost, 0) || 0) - (c.impairmentLoss || 0)), 0))}
-              </td>
-              <td className="px-6 py-4 text-right">
-                <button onClick={() => onEdit(a)} className="bg-slate-100 text-slate-600 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">View Detail</button>
-              </td>
+const AssetTable = ({ assets, onEdit, currencyFormatter, categories }: any) => {
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const filteredAssets = useMemo(() => {
+    if (!searchTerm.trim()) return assets;
+    
+    const term = searchTerm.toLowerCase().trim();
+    return assets.filter((a: Asset) => {
+      const category = categories.find((c: any) => c.id === a.categoryId);
+      const categoryName = category?.name.toLowerCase() || '';
+      
+      return (
+        a.assetNumber.toLowerCase().includes(term) ||
+        a.name.toLowerCase().includes(term) ||
+        a.tagId.toLowerCase().includes(term) ||
+        categoryName.includes(term) ||
+        a.description.toLowerCase().includes(term)
+      );
+    });
+  }, [assets, searchTerm, categories]);
+
+  return (
+    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="relative w-full md:w-96">
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+            <Search size={18} className="text-slate-400" />
+          </div>
+          <input
+            type="text"
+            placeholder="Search by name, reference, tag or category..."
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-11 pr-10 py-2.5 text-xs font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-100 focus:bg-white transition-all placeholder:text-slate-300 placeholder:font-medium"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          {searchTerm && (
+            <button 
+              onClick={() => setSearchTerm('')}
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-4 shrink-0">
+          <div className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            <Filter size={12} /> Results: <span className="text-blue-600 ml-1">{filteredAssets.length}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-slate-500 font-black uppercase text-[10px] tracking-widest border-b border-slate-200">
+            <tr>
+              <th className="px-6 py-5 text-left">Asset Reference</th>
+              <th className="px-6 py-5 text-left">Description</th>
+              <th className="px-6 py-5 text-left">Class</th>
+              <th className="px-6 py-5 text-right">Carrying Value</th>
+              <th className="px-6 py-5 text-right">Management</th>
             </tr>
-          ))
-        )}
-      </tbody>
-    </table>
-  </div>
-);
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {filteredAssets.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-6 py-24 text-center">
+                  <div className="flex flex-col items-center gap-3 text-slate-300">
+                    <Search size={48} strokeWidth={1} />
+                    <p className="font-black uppercase tracking-widest text-[10px]">
+                      {searchTerm ? `No results for "${searchTerm}"` : 'No assets found in registry'}
+                    </p>
+                    {searchTerm && (
+                      <button onClick={() => setSearchTerm('')} className="text-blue-500 text-[10px] font-black hover:underline uppercase">Clear Filters</button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              filteredAssets.map((a: Asset) => {
+                const category = categories.find((c: any) => c.id === a.categoryId);
+                return (
+                  <tr key={a.id} className="hover:bg-blue-50/30 transition-colors group">
+                    <td className="px-6 py-4">
+                      <span className="font-black text-blue-600 tracking-tighter">{a.assetNumber}</span>
+                      <span className="block text-[9px] text-slate-400 font-mono mt-0.5">{a.tagId || 'No Tag'}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="font-bold text-slate-800 block text-xs">{a.name}</span>
+                      <span className="text-[10px] text-slate-400 line-clamp-1 italic">{a.description}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="inline-block px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest rounded-md">
+                        {category?.name || 'Unassigned'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right font-black text-slate-700 font-mono text-xs">
+                      {currencyFormatter.format(a.components.reduce((s,c) => s + (c.cost + (c.revaluations?.reduce((sum, r) => r.newFairValue - c.cost, 0) || 0) - (c.impairmentLoss || 0)), 0))}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button onClick={() => onEdit(a)} className="bg-slate-100 text-slate-600 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">View Detail</button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
 
 export default App;
