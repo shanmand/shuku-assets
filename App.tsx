@@ -34,7 +34,10 @@ import {
   Search,
   X,
   Filter,
-  Trash2
+  Trash2,
+  AlertTriangle,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { format, startOfYear } from 'date-fns';
 
@@ -209,6 +212,39 @@ const App: React.FC = () => {
     }
   };
 
+  const handleBulkDelete = (ids: string[]) => {
+    if (ids.length === 0) return;
+    
+    if (confirm(`CRITICAL ACTION: Are you sure you want to PERMANENTLY delete ${ids.length} selected records? This will destroy all financial and audit history for these items.`)) {
+      const itemsToDelete = assets.filter(a => ids.includes(a.id));
+      setAssets(prev => prev.filter(a => !ids.includes(a.id)));
+      
+      // Log bulk action
+      logAction('BULK', 'DELETE_BATCH', [{ 
+        field: 'Count', 
+        oldValue: ids.length, 
+        newValue: 0 
+      }, {
+        field: 'Items',
+        oldValue: itemsToDelete.map(i => i.name).join(', '),
+        newValue: 'REMOVED'
+      }]);
+    }
+  };
+
+  const handleDeleteAll = () => {
+    const verification = prompt('WARNING: You are about to wipe the entire Asset Registry. This is irreversible. Type "DELETE ALL" to confirm this action:');
+    
+    if (verification === 'DELETE ALL') {
+      const oldCount = assets.length;
+      setAssets([]);
+      logAction('SYSTEM', 'PURGE_ALL', [{ field: 'Registry', oldValue: `${oldCount} records`, newValue: 'Empty' }]);
+      alert('Registry successfully purged.');
+    } else if (verification !== null) {
+      alert('Verification failed. Action cancelled.');
+    }
+  };
+
   const currencyFormatter = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' });
 
   return (
@@ -348,7 +384,17 @@ const App: React.FC = () => {
           ) : (
             <>
               {activeTab === 'dashboard' && <AssetDashboard assets={assets} categories={categories} locations={locations} reportDate={endDate} />}
-              {activeTab === 'register' && <AssetTable assets={assets} onEdit={setEditingAsset} onDelete={handleDeleteAsset} currencyFormatter={currencyFormatter} categories={categories} />}
+              {activeTab === 'register' && (
+                <AssetTable 
+                  assets={assets} 
+                  onEdit={setEditingAsset} 
+                  onDelete={handleDeleteAsset} 
+                  onBulkDelete={handleBulkDelete}
+                  onDeleteAll={handleDeleteAll}
+                  currencyFormatter={currencyFormatter} 
+                  categories={categories} 
+                />
+              )}
               {activeTab === 'locations' && <LocationManager locations={locations} onUpdate={setLocations} assets={assets} />}
               {activeTab === 'reports' && <ReportingSuite assets={assets} categories={categories} locations={locations} startDate={startDate} endDate={endDate} />}
               {activeTab === 'journals' && <JournalManager assets={assets} categories={categories} locations={locations} selectedMonth={format(new Date(endDate), 'yyyy-MM')} />}
@@ -375,8 +421,9 @@ const NavItem = ({ active, onClick, icon: Icon, label }: any) => (
   </button>
 );
 
-const AssetTable = ({ assets, onEdit, onDelete, currencyFormatter, categories }: any) => {
+const AssetTable = ({ assets, onEdit, onDelete, onBulkDelete, onDeleteAll, currencyFormatter, categories }: any) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const filteredAssets = useMemo(() => {
     if (!searchTerm.trim()) return assets;
@@ -396,8 +443,25 @@ const AssetTable = ({ assets, onEdit, onDelete, currencyFormatter, categories }:
     });
   }, [assets, searchTerm, categories]);
 
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filteredAssets.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredAssets.map((a: any) => a.id));
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const handleBulkDeleteAction = () => {
+    onBulkDelete(selectedIds);
+    setSelectedIds([]);
+  };
+
   return (
-    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
       <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
         <div className="relative w-full md:w-96">
           <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
@@ -423,13 +487,26 @@ const AssetTable = ({ assets, onEdit, onDelete, currencyFormatter, categories }:
           <div className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-widest">
             <Filter size={12} /> Results: <span className="text-blue-600 ml-1">{filteredAssets.length}</span>
           </div>
+          {assets.length > 0 && (
+            <button 
+              onClick={onDeleteAll}
+              className="flex items-center gap-2 text-red-400 hover:text-red-600 text-[10px] font-black uppercase tracking-widest transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50"
+            >
+              <AlertTriangle size={14} /> Purge Registry
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-20">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 font-black uppercase text-[10px] tracking-widest border-b border-slate-200">
             <tr>
+              <th className="px-6 py-5 text-left w-10">
+                <button onClick={toggleSelectAll} className="text-slate-400 hover:text-blue-600 transition-colors">
+                  {selectedIds.length === filteredAssets.length && filteredAssets.length > 0 ? <CheckSquare size={18} /> : <Square size={18} />}
+                </button>
+              </th>
               <th className="px-6 py-5 text-left">Asset Reference</th>
               <th className="px-6 py-5 text-left">Description</th>
               <th className="px-6 py-5 text-left">Class</th>
@@ -440,7 +517,7 @@ const AssetTable = ({ assets, onEdit, onDelete, currencyFormatter, categories }:
           <tbody className="divide-y divide-slate-100">
             {filteredAssets.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-24 text-center">
+                <td colSpan={6} className="px-6 py-24 text-center">
                   <div className="flex flex-col items-center gap-3 text-slate-300">
                     <Search size={48} strokeWidth={1} />
                     <p className="font-black uppercase tracking-widest text-[10px]">
@@ -455,8 +532,14 @@ const AssetTable = ({ assets, onEdit, onDelete, currencyFormatter, categories }:
             ) : (
               filteredAssets.map((a: Asset) => {
                 const category = categories.find((c: any) => c.id === a.categoryId);
+                const isSelected = selectedIds.includes(a.id);
                 return (
-                  <tr key={a.id} className="hover:bg-blue-50/30 transition-colors group">
+                  <tr key={a.id} className={`hover:bg-blue-50/30 transition-colors group ${isSelected ? 'bg-blue-50/50' : ''}`}>
+                    <td className="px-6 py-4">
+                      <button onClick={() => toggleSelectOne(a.id)} className={`${isSelected ? 'text-blue-600' : 'text-slate-300 hover:text-blue-400'} transition-colors`}>
+                        {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
+                      </button>
+                    </td>
                     <td className="px-6 py-4">
                       <span className="font-black text-blue-600 tracking-tighter">{a.assetNumber}</span>
                       <span className="block text-[9px] text-slate-400 font-mono mt-0.5">{a.tagId || 'No Tag'}</span>
@@ -486,6 +569,26 @@ const AssetTable = ({ assets, onEdit, onDelete, currencyFormatter, categories }:
           </tbody>
         </table>
       </div>
+
+      {/* Floating Bulk Action Bar */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-5 rounded-3xl shadow-2xl shadow-blue-900/40 flex items-center gap-8 border border-slate-800 z-50 animate-in slide-in-from-bottom-8">
+           <div className="flex flex-col">
+             <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Selected Assets</span>
+             <span className="text-xl font-black tracking-tighter">{selectedIds.length} <span className="text-[10px] font-bold text-slate-500 ml-1 uppercase">Records Marked</span></span>
+           </div>
+           <div className="h-10 w-[1px] bg-slate-800"></div>
+           <div className="flex gap-3">
+             <button onClick={() => setSelectedIds([])} className="text-[10px] font-black uppercase tracking-widest px-4 py-2 hover:bg-slate-800 rounded-xl transition-all">Cancel</button>
+             <button 
+               onClick={handleBulkDeleteAction}
+               className="bg-red-600 text-white px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-red-700 transition-all shadow-lg shadow-red-900/20"
+             >
+               <Trash2 size={16} /> Delete Selected
+             </button>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
