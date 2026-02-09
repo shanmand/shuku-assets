@@ -63,8 +63,6 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
     calculations.forEach(c => {
       const asset = assets.find(a => a.id === c.assetId)!;
       
-      // EXCLUSION LOGIC: 
-      // Do not show assets that had no cost basis at the start AND no additions in the period.
       if ((c.openingCost || 0) === 0 && (c.additions || 0) === 0 && (c.closingCost || 0) === 0) {
         return;
       }
@@ -73,7 +71,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
       groups[asset.categoryId].push(c);
     });
 
-    // Sort within each group by acquisition date
+    // Sort within each group by acquisition date ascending
     Object.keys(groups).forEach(catId => {
       groups[catId].sort((a, b) => {
         const assetA = assets.find(as => as.id === a.assetId)!;
@@ -85,10 +83,28 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
     return groups;
   }, [calculations, assets]);
 
-  // Use this for exports to ensure they match the filtered screen view
   const visibleCalculations = useMemo(() => {
     return Object.values(groupedCalculations).flat();
   }, [groupedCalculations]);
+
+  // Calculate Grand Totals
+  const grandTotals = useMemo(() => {
+    const isSars = activeView === 'sars';
+    return visibleCalculations.reduce((acc, curr) => ({
+      openingCost: acc.openingCost + curr.openingCost,
+      additions: acc.additions + curr.additions,
+      revalImp: acc.revalImp + (curr.revaluations || 0) - (curr.impairments || 0),
+      disposals: acc.disposals + curr.disposals,
+      closingCost: acc.closingCost + curr.closingCost,
+      openingDepr: acc.openingDepr + (isSars ? curr.openingAccumulatedTaxDepr : curr.openingAccumulatedDepr),
+      periodicDepr: acc.periodicDepr + (isSars ? curr.taxDeductionForPeriod : curr.periodicDepr),
+      closingDepr: acc.closingDepr + (isSars ? curr.closingAccumulatedTaxDepr : curr.closingAccumulatedTaxDepr),
+      carryingValue: acc.carryingValue + (isSars ? curr.taxValue : curr.nbv)
+    }), {
+      openingCost: 0, additions: 0, revalImp: 0, disposals: 0, closingCost: 0,
+      openingDepr: 0, periodicDepr: 0, closingDepr: 0, carryingValue: 0
+    });
+  }, [visibleCalculations, activeView]);
 
   const exportToExcel = () => {
     const reportData = visibleCalculations.map(calc => {
@@ -137,12 +153,13 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
     const title = activeView === 'ifrs' ? 'Asset Movement Schedule (IAS 16)' : 'SARS Wear & Tear Schedule';
     const primaryColor = activeView === 'ifrs' ? [30, 58, 95] : [5, 150, 105];
     const term = activeView === 'ifrs' ? 'Depr' : 'W&T';
+    const isSars = activeView === 'sars';
 
     doc.setFontSize(18);
     doc.setTextColor(40, 40, 40);
     doc.text("SHUKU ASSET MANAGEMENT", 14, 15);
     doc.setFontSize(10);
-    doc.text(`Entity: Lupo Bakery Pty Ltd • Period: ${startDate} to ${endDate}`, 14, 22);
+    doc.text(`Entity: Lupo Bakery Group • Period: ${startDate} to ${endDate}`, 14, 22);
     doc.setFontSize(14);
     doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
     doc.text(title.toUpperCase(), 14, 32);
@@ -155,6 +172,21 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
       const items = groupedCalculations[catId];
       tableRows.push([{ content: `CLASS: ${category?.name || 'Unknown'}`, colSpan: totalCols, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
       
+      const groupTotal = items.reduce((acc, curr) => ({
+        openingCost: acc.openingCost + curr.openingCost,
+        additions: acc.additions + curr.additions,
+        revalImp: acc.revalImp + (curr.revaluations || 0) - (curr.impairments || 0),
+        disposals: acc.disposals + curr.disposals,
+        closingCost: acc.closingCost + curr.closingCost,
+        openingDepr: acc.openingDepr + (isSars ? curr.openingAccumulatedTaxDepr : curr.openingAccumulatedDepr),
+        periodicDepr: acc.periodicDepr + (isSars ? curr.taxDeductionForPeriod : curr.periodicDepr),
+        closingDepr: acc.closingDepr + (isSars ? curr.closingAccumulatedTaxDepr : curr.closingAccumulatedTaxDepr),
+        carryingValue: acc.carryingValue + (isSars ? curr.taxValue : curr.nbv)
+      }), {
+        openingCost: 0, additions: 0, revalImp: 0, disposals: 0, closingCost: 0,
+        openingDepr: 0, periodicDepr: 0, closingDepr: 0, carryingValue: 0
+      });
+
       items.forEach(calc => {
         const asset = assets.find(a => a.id === calc.assetId)!;
         const revalImpDelta = (calc.revaluations || 0) - (calc.impairments || 0);
@@ -186,7 +218,37 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
         
         tableRows.push(row);
       });
+
+      // Subtotal row for PDF
+      const subtotalRow: any[] = [
+        { content: `Subtotal: ${category?.name}`, colSpan: 3, styles: { halign: 'right', fontStyle: 'bold' } },
+        currencyFormatter.format(groupTotal.openingCost),
+        currencyFormatter.format(groupTotal.additions),
+      ];
+      if (hasRevImp) subtotalRow.push(currencyFormatter.format(groupTotal.revalImp));
+      subtotalRow.push(currencyFormatter.format(groupTotal.disposals));
+      subtotalRow.push(currencyFormatter.format(groupTotal.closingCost));
+      subtotalRow.push(currencyFormatter.format(groupTotal.openingDepr));
+      subtotalRow.push(currencyFormatter.format(groupTotal.periodicDepr));
+      subtotalRow.push(currencyFormatter.format(groupTotal.closingDepr));
+      subtotalRow.push({ content: currencyFormatter.format(groupTotal.carryingValue), styles: { fontStyle: 'bold' } });
+      tableRows.push(subtotalRow);
     });
+
+    // Grand total row for PDF
+    const grandTotalRow: any[] = [
+      { content: `GRAND TOTAL (CONSOLIDATED)`, colSpan: 3, styles: { halign: 'right', fontStyle: 'bold', fillColor: [15, 23, 42], textColor: [255, 255, 255] } },
+      { content: currencyFormatter.format(grandTotals.openingCost), styles: { fillColor: [15, 23, 42], textColor: [255, 255, 255] } },
+      { content: currencyFormatter.format(grandTotals.additions), styles: { fillColor: [15, 23, 42], textColor: [255, 255, 255] } },
+    ];
+    if (hasRevImp) grandTotalRow.push({ content: currencyFormatter.format(grandTotals.revalImp), styles: { fillColor: [15, 23, 42], textColor: [255, 255, 255] } });
+    grandTotalRow.push({ content: currencyFormatter.format(grandTotals.disposals), styles: { fillColor: [15, 23, 42], textColor: [255, 255, 255] } });
+    grandTotalRow.push({ content: currencyFormatter.format(grandTotals.closingCost), styles: { fillColor: [15, 23, 42], textColor: [255, 255, 255] } });
+    grandTotalRow.push({ content: currencyFormatter.format(grandTotals.openingDepr), styles: { fillColor: [15, 23, 42], textColor: [255, 255, 255] } });
+    grandTotalRow.push({ content: currencyFormatter.format(grandTotals.periodicDepr), styles: { fillColor: [15, 23, 42], textColor: [255, 255, 255] } });
+    grandTotalRow.push({ content: currencyFormatter.format(grandTotals.closingDepr), styles: { fillColor: [15, 23, 42], textColor: [255, 255, 255] } });
+    grandTotalRow.push({ content: currencyFormatter.format(grandTotals.carryingValue), styles: { fontStyle: 'bold', fillColor: [15, 23, 42], textColor: [255, 255, 255] } });
+    tableRows.push(grandTotalRow);
 
     const headerRow = ['Asset Details', 'Tag ID', 'Acq Date', 'Op Bal', 'Additions'];
     if (hasRevImp) headerRow.push('Rev/Imp');
@@ -253,7 +315,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
               {activeView === 'ifrs' ? <FileBarChart size={28} /> : <ReceiptText size={28} />}
               {activeView === 'ifrs' ? 'Asset Movement Schedule (IAS 16)' : 'SARS Wear & Tear Schedule'}
             </h2>
-            <p className="text-sm opacity-70">Lupo Bakery Pty Ltd • {startDate} to {endDate}</p>
+            <p className="text-sm opacity-70">Lupo Bakery Group • {startDate} to {endDate}</p>
           </div>
           <div className="text-right no-print">
             <p className="text-[10px] font-black uppercase opacity-60 tracking-widest">Reporting Basis</p>
@@ -264,7 +326,6 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
         <div className="overflow-x-auto custom-scrollbar">
           <table className="w-full text-[10px] text-left border-collapse">
             <thead className="bg-slate-50 text-slate-500 font-black text-[8px] uppercase border-b border-slate-200">
-              {/* Grouped Header Row */}
               <tr className="divide-x divide-slate-200">
                 <th colSpan={2} className="px-4 py-2 border-b border-slate-200"></th>
                 <th colSpan={hasRevImp ? 6 : 5} className="px-2 py-2 text-center bg-slate-100 border-b border-slate-200">Cost Analysis</th>
@@ -273,7 +334,6 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
                 </th>
                 <th className="px-4 py-2 border-b border-slate-200"></th>
               </tr>
-              {/* Column Specific Row */}
               <tr className="divide-x divide-slate-200">
                 <th className="px-4 py-4 sticky left-0 z-10 bg-white">Asset Details</th>
                 <th className="px-2 py-4 text-center">Electronic Tag / RFID</th>
@@ -295,92 +355,110 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
               {Object.keys(groupedCalculations).length === 0 ? (
                 <tr><td colSpan={hasRevImp ? 13 : 12} className="px-4 py-24 text-center text-slate-300 font-bold uppercase tracking-widest">No assets matching criteria</td></tr>
               ) : (
-                Object.keys(groupedCalculations).map(catId => {
-                  const category = categories.find(c => c.id === catId);
-                  const items = groupedCalculations[catId];
-                  const isSars = activeView === 'sars';
+                <>
+                  {Object.keys(groupedCalculations).map(catId => {
+                    const category = categories.find(c => c.id === catId);
+                    const items = groupedCalculations[catId];
+                    const isSars = activeView === 'sars';
 
-                  // Calculate totals for this group
-                  const groupTotal = items.reduce((acc, curr) => ({
-                    openingCost: acc.openingCost + curr.openingCost,
-                    additions: acc.additions + curr.additions,
-                    revalImp: acc.revalImp + (curr.revaluations || 0) - (curr.impairments || 0),
-                    disposals: acc.disposals + curr.disposals,
-                    closingCost: acc.closingCost + curr.closingCost,
-                    openingDepr: acc.openingDepr + (isSars ? curr.openingAccumulatedTaxDepr : curr.openingAccumulatedDepr),
-                    periodicDepr: acc.periodicDepr + (isSars ? curr.taxDeductionForPeriod : curr.periodicDepr),
-                    closingDepr: acc.closingDepr + (isSars ? curr.closingAccumulatedTaxDepr : curr.closingAccumulatedDepr),
-                    carryingValue: acc.carryingValue + (isSars ? curr.taxValue : curr.nbv)
-                  }), {
-                    openingCost: 0, additions: 0, revalImp: 0, disposals: 0, closingCost: 0,
-                    openingDepr: 0, periodicDepr: 0, closingDepr: 0, carryingValue: 0
-                  });
+                    const groupTotal = items.reduce((acc, curr) => ({
+                      openingCost: acc.openingCost + curr.openingCost,
+                      additions: acc.additions + curr.additions,
+                      revalImp: acc.revalImp + (curr.revaluations || 0) - (curr.impairments || 0),
+                      disposals: acc.disposals + curr.disposals,
+                      closingCost: acc.closingCost + curr.closingCost,
+                      openingDepr: acc.openingDepr + (isSars ? curr.openingAccumulatedTaxDepr : curr.openingAccumulatedDepr),
+                      periodicDepr: acc.periodicDepr + (isSars ? curr.taxDeductionForPeriod : curr.periodicDepr),
+                      closingDepr: acc.closingDepr + (isSars ? curr.closingAccumulatedTaxDepr : curr.closingAccumulatedTaxDepr),
+                      carryingValue: acc.carryingValue + (isSars ? curr.taxValue : curr.nbv)
+                    }), {
+                      openingCost: 0, additions: 0, revalImp: 0, disposals: 0, closingCost: 0,
+                      openingDepr: 0, periodicDepr: 0, closingDepr: 0, carryingValue: 0
+                    });
 
-                  return (
-                    <React.Fragment key={catId}>
-                      <tr className="bg-slate-50"><td colSpan={hasRevImp ? 13 : 12} className="px-4 py-2 font-black text-[9px] text-slate-400 uppercase tracking-widest border-l-4 border-blue-500">Class: {category?.name}</td></tr>
-                      {items.map(calc => {
-                        const asset = assets.find(a => a.id === calc.assetId)!;
-                        const revalImpDelta = (calc.revaluations || 0) - (calc.impairments || 0);
-                        
-                        return (
-                          <tr key={calc.assetId} className="hover:bg-slate-50 divide-x divide-slate-100 transition-colors">
-                            <td className="px-4 py-3 sticky left-0 z-10 bg-white font-bold text-slate-800">
-                              <span className="block truncate max-w-[150px]">{asset.name}</span>
-                              <span className="block text-[8px] text-slate-400 font-mono tracking-tighter">{asset.assetNumber}</span>
-                            </td>
-                            <td className="px-2 py-3 text-center text-[9px] font-bold text-slate-500 uppercase tracking-tight">
-                              {asset.tagId || '-'}
-                            </td>
-                            <td className="px-2 py-3 text-center font-mono text-slate-500">
-                              {getAcqDate(asset)}
-                            </td>
-                            <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(calc.openingCost)}</td>
-                            <td className="px-2 py-3 text-right text-emerald-600 font-mono">+{currencyFormatter.format(calc.additions)}</td>
-                            {hasRevImp && (
-                              <td className={`px-2 py-3 text-right font-mono ${revalImpDelta >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
-                                {revalImpDelta === 0 ? '-' : currencyFormatter.format(revalImpDelta)}
+                    return (
+                      <React.Fragment key={catId}>
+                        <tr className="bg-slate-50"><td colSpan={hasRevImp ? 13 : 12} className="px-4 py-2 font-black text-[9px] text-slate-400 uppercase tracking-widest border-l-4 border-blue-500">Class: {category?.name}</td></tr>
+                        {items.map(calc => {
+                          const asset = assets.find(a => a.id === calc.assetId)!;
+                          const revalImpDelta = (calc.revaluations || 0) - (calc.impairments || 0);
+                          
+                          return (
+                            <tr key={calc.assetId} className="hover:bg-slate-50 divide-x divide-slate-100 transition-colors">
+                              <td className="px-4 py-3 sticky left-0 z-10 bg-white font-bold text-slate-800">
+                                <span className="block truncate max-w-[150px]">{asset.name}</span>
+                                <span className="block text-[8px] text-slate-400 font-mono tracking-tighter">{asset.assetNumber}</span>
                               </td>
-                            )}
-                            <td className="px-2 py-3 text-right text-red-600 font-mono">-{currencyFormatter.format(calc.disposals)}</td>
-                            <td className="px-2 py-3 text-right font-black font-mono">{currencyFormatter.format(calc.closingCost)}</td>
-                            
-                            <td className="px-2 py-3 text-right text-slate-400 font-mono">
-                               {currencyFormatter.format(isSars ? calc.openingAccumulatedTaxDepr : calc.openingAccumulatedDepr)}
+                              <td className="px-2 py-3 text-center text-[9px] font-bold text-slate-500 uppercase tracking-tight">
+                                {asset.tagId || '-'}
+                              </td>
+                              <td className="px-2 py-3 text-center font-mono text-slate-500">
+                                {getAcqDate(asset)}
+                              </td>
+                              <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(calc.openingCost)}</td>
+                              <td className="px-2 py-3 text-right text-emerald-600 font-mono">+{currencyFormatter.format(calc.additions)}</td>
+                              {hasRevImp && (
+                                <td className={`px-2 py-3 text-right font-mono ${revalImpDelta >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                                  {revalImpDelta === 0 ? '-' : currencyFormatter.format(revalImpDelta)}
+                                </td>
+                              )}
+                              <td className="px-2 py-3 text-right text-red-600 font-mono">-{currencyFormatter.format(calc.disposals)}</td>
+                              <td className="px-2 py-3 text-right font-black font-mono">{currencyFormatter.format(calc.closingCost)}</td>
+                              
+                              <td className="px-2 py-3 text-right text-slate-400 font-mono">
+                                 {currencyFormatter.format(isSars ? calc.openingAccumulatedTaxDepr : calc.openingAccumulatedDepr)}
+                              </td>
+                              <td className="px-2 py-3 text-right text-blue-600 font-mono">
+                                 {currencyFormatter.format(isSars ? calc.taxDeductionForPeriod : calc.periodicDepr)}
+                              </td>
+                              <td className="px-2 py-3 text-right font-black font-mono">
+                                 {currencyFormatter.format(isSars ? calc.closingAccumulatedTaxDepr : calc.closingAccumulatedTaxDepr)}
+                              </td>
+                              
+                              <td className="px-4 py-3 text-right bg-slate-900/5 text-slate-900 font-black font-mono border-l-2 border-slate-900/10">
+                                {currencyFormatter.format(isSars ? calc.taxValue : calc.nbv)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        <tr className="bg-slate-100/50 font-black divide-x divide-slate-200">
+                          <td colSpan={3} className="px-4 py-3 text-right uppercase tracking-widest text-[8px] text-slate-500">Subtotal: {category?.name}</td>
+                          <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(groupTotal.openingCost)}</td>
+                          <td className="px-2 py-3 text-right font-mono text-emerald-600">{currencyFormatter.format(groupTotal.additions)}</td>
+                          {hasRevImp && (
+                            <td className={`px-2 py-3 text-right font-mono ${groupTotal.revalImp >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                              {groupTotal.revalImp === 0 ? '-' : currencyFormatter.format(groupTotal.revalImp)}
                             </td>
-                            <td className="px-2 py-3 text-right text-blue-600 font-mono">
-                               {currencyFormatter.format(isSars ? calc.taxDeductionForPeriod : calc.periodicDepr)}
-                            </td>
-                            <td className="px-2 py-3 text-right font-black font-mono">
-                               {currencyFormatter.format(isSars ? calc.closingAccumulatedTaxDepr : calc.closingAccumulatedDepr)}
-                            </td>
-                            
-                            <td className="px-4 py-3 text-right bg-slate-900/5 text-slate-900 font-black font-mono border-l-2 border-slate-900/10">
-                              {currencyFormatter.format(isSars ? calc.taxValue : calc.nbv)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {/* Subtotal Row */}
-                      <tr className="bg-slate-100/50 font-black divide-x divide-slate-200">
-                        <td colSpan={3} className="px-4 py-3 text-right uppercase tracking-widest text-[8px] text-slate-500">Subtotal: {category?.name}</td>
-                        <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(groupTotal.openingCost)}</td>
-                        <td className="px-2 py-3 text-right font-mono text-emerald-600">{currencyFormatter.format(groupTotal.additions)}</td>
-                        {hasRevImp && (
-                          <td className={`px-2 py-3 text-right font-mono ${groupTotal.revalImp >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
-                            {groupTotal.revalImp === 0 ? '-' : currencyFormatter.format(groupTotal.revalImp)}
-                          </td>
-                        )}
-                        <td className="px-2 py-3 text-right font-mono text-red-600">{currencyFormatter.format(groupTotal.disposals)}</td>
-                        <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(groupTotal.closingCost)}</td>
-                        <td className="px-2 py-3 text-right font-mono text-slate-500">{currencyFormatter.format(groupTotal.openingDepr)}</td>
-                        <td className="px-2 py-3 text-right font-mono text-blue-600">{currencyFormatter.format(groupTotal.periodicDepr)}</td>
-                        <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(groupTotal.closingDepr)}</td>
-                        <td className="px-4 py-3 text-right bg-slate-200/50 font-mono">{currencyFormatter.format(groupTotal.carryingValue)}</td>
-                      </tr>
-                    </React.Fragment>
-                  );
-                })
+                          )}
+                          <td className="px-2 py-3 text-right font-mono text-red-600">{currencyFormatter.format(groupTotal.disposals)}</td>
+                          <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(groupTotal.closingCost)}</td>
+                          <td className="px-2 py-3 text-right font-mono text-slate-500">{currencyFormatter.format(groupTotal.openingDepr)}</td>
+                          <td className="px-2 py-3 text-right font-mono text-blue-600">{currencyFormatter.format(groupTotal.periodicDepr)}</td>
+                          <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(groupTotal.closingDepr)}</td>
+                          <td className="px-4 py-3 text-right bg-slate-200/50 font-mono">{currencyFormatter.format(groupTotal.carryingValue)}</td>
+                        </tr>
+                      </React.Fragment>
+                    );
+                  })}
+                  
+                  {/* Grand Total Row */}
+                  <tr className="bg-slate-900 text-white font-black divide-x divide-slate-800 border-t-2 border-slate-900">
+                    <td colSpan={3} className="px-4 py-5 text-right uppercase tracking-widest text-[10px]">Grand Total (Consolidated)</td>
+                    <td className="px-2 py-5 text-right font-mono">{currencyFormatter.format(grandTotals.openingCost)}</td>
+                    <td className="px-2 py-5 text-right font-mono text-emerald-400">{currencyFormatter.format(grandTotals.additions)}</td>
+                    {hasRevImp && (
+                      <td className="px-2 py-5 text-right font-mono">
+                        {currencyFormatter.format(grandTotals.revalImp)}
+                      </td>
+                    )}
+                    <td className="px-2 py-5 text-right font-mono text-red-400">{currencyFormatter.format(grandTotals.disposals)}</td>
+                    <td className="px-2 py-5 text-right font-mono">{currencyFormatter.format(grandTotals.closingCost)}</td>
+                    <td className="px-2 py-5 text-right font-mono opacity-70">{currencyFormatter.format(grandTotals.openingDepr)}</td>
+                    <td className="px-2 py-5 text-right font-mono text-blue-300">{currencyFormatter.format(grandTotals.periodicDepr)}</td>
+                    <td className="px-2 py-5 text-right font-mono">{currencyFormatter.format(grandTotals.closingDepr)}</td>
+                    <td className="px-4 py-5 text-right bg-black/30 font-mono text-lg">{currencyFormatter.format(grandTotals.carryingValue)}</td>
+                  </tr>
+                </>
               )}
             </tbody>
           </table>
