@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { Asset, AssetCategory, AssetLocation } from '../types';
 import { calculateDepreciation } from '../services/assetService';
@@ -98,6 +97,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
       const row: any = {
         'Asset Number': asset.assetNumber,
         'Asset Name': asset.name,
+        'Electronic Tag / RFID': asset.tagId || 'N/A',
         'Acq Date': getAcqDate(asset),
         'Category': cat?.name || '',
         'Opening Cost': calc.openingCost,
@@ -142,13 +142,13 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
     doc.setTextColor(40, 40, 40);
     doc.text("SHUKU ASSET MANAGEMENT", 14, 15);
     doc.setFontSize(10);
-    doc.text(`Entity: Lupo Bakery Group • Period: ${startDate} to ${endDate}`, 14, 22);
+    doc.text(`Entity: Lupo Bakery Pty Ltd • Period: ${startDate} to ${endDate}`, 14, 22);
     doc.setFontSize(14);
     doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
     doc.text(title.toUpperCase(), 14, 32);
 
     const tableRows: any[] = [];
-    const totalCols = hasRevImp ? 11 : 10;
+    const totalCols = hasRevImp ? 12 : 11;
 
     Object.keys(groupedCalculations).forEach(catId => {
       const category = categories.find(c => c.id === catId);
@@ -161,6 +161,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
         
         const row: any[] = [
           { content: `${asset.name}\n(${asset.assetNumber})`, styles: { fontStyle: 'bold' } },
+          asset.tagId || '-',
           getAcqDate(asset),
           currencyFormatter.format(calc.openingCost),
           currencyFormatter.format(calc.additions),
@@ -187,7 +188,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
       });
     });
 
-    const headerRow = ['Asset Details', 'Acq Date', 'Op Bal', 'Additions'];
+    const headerRow = ['Asset Details', 'Tag ID', 'Acq Date', 'Op Bal', 'Additions'];
     if (hasRevImp) headerRow.push('Rev/Imp');
     headerRow.push(...['Disposals', 'Closing Cost', `Op ${term}`, `Charge`, `Cl ${term}`, activeView === 'ifrs' ? 'NBV' : 'Tax Val']);
 
@@ -196,12 +197,12 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
       head: [headerRow],
       body: tableRows,
       theme: 'grid',
-      styles: { fontSize: 7, cellPadding: 2, font: 'helvetica' },
+      styles: { fontSize: 6, cellPadding: 1.5, font: 'helvetica' },
       headStyles: { fillColor: primaryColor as any, textColor: [255, 255, 255], halign: 'center', fontStyle: 'bold' },
       columnStyles: {
-        0: { cellWidth: 40 },
-        1: { halign: 'center', cellWidth: 20 },
-        2: { halign: 'right' },
+        0: { cellWidth: 35 },
+        1: { halign: 'center', cellWidth: 18 },
+        2: { halign: 'center', cellWidth: 15 },
         3: { halign: 'right' },
         4: { halign: 'right' },
         5: { halign: 'right' },
@@ -209,7 +210,8 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
         7: { halign: 'right' },
         8: { halign: 'right' },
         9: { halign: 'right' },
-        10: { halign: 'right' }
+        10: { halign: 'right' },
+        11: { halign: 'right' }
       }
     });
 
@@ -251,7 +253,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
               {activeView === 'ifrs' ? <FileBarChart size={28} /> : <ReceiptText size={28} />}
               {activeView === 'ifrs' ? 'Asset Movement Schedule (IAS 16)' : 'SARS Wear & Tear Schedule'}
             </h2>
-            <p className="text-sm opacity-70">Lupo Bakery Group • {startDate} to {endDate}</p>
+            <p className="text-sm opacity-70">Lupo Bakery Pty Ltd • {startDate} to {endDate}</p>
           </div>
           <div className="text-right no-print">
             <p className="text-[10px] font-black uppercase opacity-60 tracking-widest">Reporting Basis</p>
@@ -264,7 +266,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
             <thead className="bg-slate-50 text-slate-500 font-black text-[8px] uppercase border-b border-slate-200">
               {/* Grouped Header Row */}
               <tr className="divide-x divide-slate-200">
-                <th className="px-4 py-2 border-b border-slate-200"></th>
+                <th colSpan={2} className="px-4 py-2 border-b border-slate-200"></th>
                 <th colSpan={hasRevImp ? 6 : 5} className="px-2 py-2 text-center bg-slate-100 border-b border-slate-200">Cost Analysis</th>
                 <th colSpan={3} className="px-2 py-2 text-center bg-slate-200/50 border-b border-slate-200">
                   {activeView === 'ifrs' ? 'Accumulated Depreciation' : 'Accumulated Wear & Tear'}
@@ -274,6 +276,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
               {/* Column Specific Row */}
               <tr className="divide-x divide-slate-200">
                 <th className="px-4 py-4 sticky left-0 z-10 bg-white">Asset Details</th>
+                <th className="px-2 py-4 text-center">Electronic Tag / RFID</th>
                 <th className="px-2 py-4 text-center">Acq Date</th>
                 <th className="px-2 py-4 text-center">Op Bal</th>
                 <th className="px-2 py-4 text-center">Additions</th>
@@ -290,7 +293,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
             </thead>
             <tbody className="divide-y divide-slate-100">
               {Object.keys(groupedCalculations).length === 0 ? (
-                <tr><td colSpan={hasRevImp ? 12 : 11} className="px-4 py-24 text-center text-slate-300 font-bold uppercase tracking-widest">No assets matching criteria</td></tr>
+                <tr><td colSpan={hasRevImp ? 13 : 12} className="px-4 py-24 text-center text-slate-300 font-bold uppercase tracking-widest">No assets matching criteria</td></tr>
               ) : (
                 Object.keys(groupedCalculations).map(catId => {
                   const category = categories.find(c => c.id === catId);
@@ -315,7 +318,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
 
                   return (
                     <React.Fragment key={catId}>
-                      <tr className="bg-slate-50"><td colSpan={hasRevImp ? 12 : 11} className="px-4 py-2 font-black text-[9px] text-slate-400 uppercase tracking-widest border-l-4 border-blue-500">Class: {category?.name}</td></tr>
+                      <tr className="bg-slate-50"><td colSpan={hasRevImp ? 13 : 12} className="px-4 py-2 font-black text-[9px] text-slate-400 uppercase tracking-widest border-l-4 border-blue-500">Class: {category?.name}</td></tr>
                       {items.map(calc => {
                         const asset = assets.find(a => a.id === calc.assetId)!;
                         const revalImpDelta = (calc.revaluations || 0) - (calc.impairments || 0);
@@ -325,6 +328,9 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
                             <td className="px-4 py-3 sticky left-0 z-10 bg-white font-bold text-slate-800">
                               <span className="block truncate max-w-[150px]">{asset.name}</span>
                               <span className="block text-[8px] text-slate-400 font-mono tracking-tighter">{asset.assetNumber}</span>
+                            </td>
+                            <td className="px-2 py-3 text-center text-[9px] font-bold text-slate-500 uppercase tracking-tight">
+                              {asset.tagId || '-'}
                             </td>
                             <td className="px-2 py-3 text-center font-mono text-slate-500">
                               {getAcqDate(asset)}
@@ -357,7 +363,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
                       })}
                       {/* Subtotal Row */}
                       <tr className="bg-slate-100/50 font-black divide-x divide-slate-200">
-                        <td colSpan={2} className="px-4 py-3 text-right uppercase tracking-widest text-[8px] text-slate-500">Subtotal: {category?.name}</td>
+                        <td colSpan={3} className="px-4 py-3 text-right uppercase tracking-widest text-[8px] text-slate-500">Subtotal: {category?.name}</td>
                         <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(groupTotal.openingCost)}</td>
                         <td className="px-2 py-3 text-right font-mono text-emerald-600">{currencyFormatter.format(groupTotal.additions)}</td>
                         {hasRevImp && (

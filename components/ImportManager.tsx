@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Download, Table } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -36,8 +35,9 @@ const ImportManager: React.FC<ImportManagerProps> = ({ onImport, categories, loc
   const downloadTemplate = () => {
     const data = [
       {
-        AssetNumber: 'EQP-001',
-        Name: 'Industrial Oven',
+        AssetNumber: 'LUP-MAC-001',
+        Name: 'Industrial Dough Mixer',
+        TagId: 'RFID-8832-XJ',
         Category: categories[0]?.name || 'General Equipment',
         Branch: locations.find(l => l.type === 'Branch')?.name || 'Lupo Head Office',
         Location: 'Kitchen A',
@@ -98,7 +98,7 @@ const ImportManager: React.FC<ImportManagerProps> = ({ onImport, categories, loc
           return {
             id: Math.random().toString(36).substr(2, 9),
             assetNumber: String(row.AssetNumber || row['Asset No'] || '').toUpperCase(),
-            tagId: String(row.TagId || row['Tag ID'] || ''),
+            tagId: String(row.TagId || row['Tag ID'] || row['Electronic Tag'] || row['RFID'] || ''),
             name: String(row.Name || 'Imported Asset'),
             description: String(row.Description || ''),
             categoryId: category.id,
@@ -178,7 +178,7 @@ const ImportManager: React.FC<ImportManagerProps> = ({ onImport, categories, loc
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-[9px] font-black uppercase tracking-tighter">
           {[
-            'AssetNumber', 'Name', 'Category', 'Branch', 'Location', 'SubLocation',
+            'AssetNumber', 'Name', 'TagId', 'Category', 'Branch', 'Location', 'SubLocation',
             'Cost', 'AcquisitionDate', 'UsefulLife', 'TaxRate', 'SupplierName', 'InvoiceNumber'
           ].map(col => (
             <div key={col} className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-slate-500 flex items-center gap-2">
