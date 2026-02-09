@@ -333,7 +333,7 @@ const App: React.FC = () => {
               {activeTab === 'locations' && <LocationManager locations={locations} onUpdate={setLocations} assets={assets} />}
               {activeTab === 'reports' && <ReportingSuite assets={assets} categories={categories} locations={locations} startDate={startDate} endDate={endDate} />}
               {activeTab === 'journals' && <JournalManager assets={assets} categories={categories} locations={locations} selectedMonth={format(new Date(endDate), 'yyyy-MM')} />}
-              {activeTab === 'import' && <ImportManager onImport={(a) => setAssets([...assets, ...a])} />}
+              {activeTab === 'import' && <ImportManager categories={categories} locations={locations} onImport={(a) => setAssets([...assets, ...a])} />}
               {activeTab === 'audit' && <AuditTrailView logs={auditLogs} assets={assets} />}
               {activeTab === 'settings' && <CategoryManager categories={categories} onUpdate={setCategories} dbConfig={dbConfig} onUpdateDb={setDbConfig} onForcePush={() => pushToPostgres(false)} onForcePull={() => pullFromPostgres(true)} onTestConnection={() => pullFromPostgres(true)} connectionStatus={connectionStatus} syncLoading={syncLoading} />}
             </>
