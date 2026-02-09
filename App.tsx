@@ -105,13 +105,37 @@ const App: React.FC = () => {
     setConnectionStatus({status: 'connecting'});
     
     try {
-      const [{ data: catData, error: catError }, { data: locData, error: locError }, { data: assetData, error: assetError }] = await Promise.all([
-        supabase.from('categories').select('*'),
-        supabase.from('locations').select('*'),
-        supabase.from('assets').select('*')
-      ]);
+      // Helper to fetch all records recursively in batches of 1000
+      const fetchAllTableData = async (table: string) => {
+        let results: any[] = [];
+        let from = 0;
+        let to = 999;
+        let hasMore = true;
 
-      if (catError || locError || assetError) throw new Error("Connection Refused");
+        while (hasMore) {
+          const { data, error } = await supabase.from(table).select('*').range(from, to);
+          if (error) throw error;
+          
+          if (data && data.length > 0) {
+            results = [...results, ...data];
+            if (data.length < 1000) {
+              hasMore = false;
+            } else {
+              from += 1000;
+              to += 1000;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+        return results;
+      };
+
+      const [catData, locData, assetData] = await Promise.all([
+        fetchAllTableData('categories'),
+        fetchAllTableData('locations'),
+        fetchAllTableData('assets')
+      ]);
 
       if (catData && catData.length > 0) setCategories(catData);
       if (locData && locData.length > 0) setLocations(locData);
@@ -121,10 +145,11 @@ const App: React.FC = () => {
       setHasSyncedInitial(true);
       setConnectionStatus({status: 'success', message: 'Engine Online'});
       
-      if (force) alert("PULL SUCCESS. Local data synced with cloud.");
+      if (force) alert(`PULL SUCCESS. Synced ${assetData.length} assets with cloud.`);
     } catch (err: any) {
+      console.error("Critical Sync Fault:", err);
       setConnectionStatus({status: 'error', message: 'Connection Error'});
-      if (force) alert("SYNC ERROR: Check your URL/Key or Docker status.");
+      if (force) alert("SYNC ERROR: System could not reach database or encountered a timeout.");
     } finally {
       setSyncLoading(false);
     }
