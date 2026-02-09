@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Asset, AssetStatus, AssetComponent, AssetLocation, AssetCategory, TaxStrategy } from '../types';
 import { Tag, Plus, Trash2, Box, MapPin, XCircle, CheckCircle, AlertTriangle, Hammer, Ban, Truck, Receipt, Phone, ShieldCheck, Calendar, Wallet, FileText, Info, Clock, Percent, Calculator } from 'lucide-react';
@@ -7,12 +6,13 @@ interface AssetFormProps {
   asset?: Asset;
   onSave: (asset: Asset) => void;
   onCancel: () => void;
+  onDelete?: (id: string) => void;
   existingAssets: Asset[];
   categories: AssetCategory[];
   locations: AssetLocation[];
 }
 
-const AssetForm: React.FC<AssetFormProps> = ({ asset, onSave, onCancel, existingAssets, categories, locations }) => {
+const AssetForm: React.FC<AssetFormProps> = ({ asset, onSave, onCancel, onDelete, existingAssets, categories, locations }) => {
   const [formData, setFormData] = useState<Partial<Asset>>({
     assetNumber: '',
     tagId: '',
@@ -340,6 +340,7 @@ const AssetForm: React.FC<AssetFormProps> = ({ asset, onSave, onCancel, existing
                             </div>
                             <div>
                               <label className="flex items-center gap-1.5 text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5"><ShieldCheck size={12} /> Tax Rate (%)</label>
+                              {/* FIXED: changed updateCategory to updateComponent */}
                               <input type="number" disabled={isRetired} className="w-full text-xs font-bold bg-white border border-slate-100 rounded-xl px-4 py-2.5 outline-none focus:border-blue-200 transition-all disabled:opacity-50" value={comp.taxRate} onChange={e => updateComponent(comp.id, { taxRate: Number(e.target.value) })} />
                             </div>
                           </div>
@@ -411,6 +412,9 @@ const AssetForm: React.FC<AssetFormProps> = ({ asset, onSave, onCancel, existing
             <h4 className="text-4xl font-black text-[#0f172a] tracking-tighter">{currencyFormatter.format(totalCost)}</h4>
           </div>
           <div className="flex gap-4 w-full md:w-auto">
+            {asset?.id && onDelete && (
+              <button type="button" onClick={() => onDelete(asset.id)} className="flex-1 px-8 py-4 bg-red-50 text-red-600 border border-red-100 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-red-100 transition shadow-sm">Delete Record</button>
+            )}
             <button type="button" onClick={onCancel} className="flex-1 px-8 py-4 text-slate-400 text-xs font-black uppercase tracking-widest hover:text-slate-800 transition-colors">Discard</button>
             <button type="submit" disabled={isDuplicate} className={`flex-1 px-12 py-5 rounded-2xl transition-all shadow-2xl font-black uppercase tracking-widest text-sm ${isDuplicate ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-blue-200 active:scale-95'}`}>
               {asset?.id ? 'Commit Changes' : 'Finalize Registration'}

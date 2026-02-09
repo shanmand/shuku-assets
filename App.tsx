@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { MOCK_ASSETS, ASSET_CATEGORIES, ORGANIZATIONAL_UNITS } from './constants';
 import { Asset, AssetStatus, AuditLog, AssetLocation, AssetCategory, DatabaseConfig } from './types';
@@ -34,7 +33,8 @@ import {
   CheckCircle,
   Search,
   X,
-  Filter
+  Filter,
+  Trash2
 } from 'lucide-react';
 import { format, startOfYear } from 'date-fns';
 
@@ -198,6 +198,17 @@ const App: React.FC = () => {
     setActiveTab('register');
   };
 
+  const handleDeleteAsset = (id: string) => {
+    const asset = assets.find(a => a.id === id);
+    if (!asset) return;
+    
+    if (confirm(`Are you sure you want to PERMANENTLY delete "${asset.name}"? This action cannot be undone and is only intended for data-entry errors.`)) {
+      setAssets(prev => prev.filter(a => a.id !== id));
+      logAction(id, 'DELETE', [{ field: 'Record', oldValue: asset.name, newValue: 'REMOVED' }]);
+      if (editingAsset?.id === id) setEditingAsset(undefined);
+    }
+  };
+
   const currencyFormatter = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' });
 
   return (
@@ -325,11 +336,19 @@ const App: React.FC = () => {
 
         <div className="flex-grow overflow-auto p-8 custom-scrollbar">
           {editingAsset ? (
-            <AssetForm asset={editingAsset.id ? editingAsset : undefined} onSave={handleSaveAsset} onCancel={() => setEditingAsset(undefined)} existingAssets={assets} categories={categories} locations={locations} />
+            <AssetForm 
+              asset={editingAsset.id ? editingAsset : undefined} 
+              onSave={handleSaveAsset} 
+              onCancel={() => setEditingAsset(undefined)} 
+              onDelete={handleDeleteAsset}
+              existingAssets={assets} 
+              categories={categories} 
+              locations={locations} 
+            />
           ) : (
             <>
               {activeTab === 'dashboard' && <AssetDashboard assets={assets} categories={categories} locations={locations} reportDate={endDate} />}
-              {activeTab === 'register' && <AssetTable assets={assets} onEdit={setEditingAsset} currencyFormatter={currencyFormatter} categories={categories} />}
+              {activeTab === 'register' && <AssetTable assets={assets} onEdit={setEditingAsset} onDelete={handleDeleteAsset} currencyFormatter={currencyFormatter} categories={categories} />}
               {activeTab === 'locations' && <LocationManager locations={locations} onUpdate={setLocations} assets={assets} />}
               {activeTab === 'reports' && <ReportingSuite assets={assets} categories={categories} locations={locations} startDate={startDate} endDate={endDate} />}
               {activeTab === 'journals' && <JournalManager assets={assets} categories={categories} locations={locations} selectedMonth={format(new Date(endDate), 'yyyy-MM')} />}
@@ -356,7 +375,7 @@ const NavItem = ({ active, onClick, icon: Icon, label }: any) => (
   </button>
 );
 
-const AssetTable = ({ assets, onEdit, currencyFormatter, categories }: any) => {
+const AssetTable = ({ assets, onEdit, onDelete, currencyFormatter, categories }: any) => {
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredAssets = useMemo(() => {
@@ -455,7 +474,10 @@ const AssetTable = ({ assets, onEdit, currencyFormatter, categories }: any) => {
                       {currencyFormatter.format(a.components.reduce((s,c) => s + (c.cost + (c.revaluations?.reduce((sum, r) => r.newFairValue - c.cost, 0) || 0) - (c.impairmentLoss || 0)), 0))}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button onClick={() => onEdit(a)} className="bg-slate-100 text-slate-600 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">View Detail</button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => onEdit(a)} className="bg-slate-100 text-slate-600 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">View Detail</button>
+                        <button onClick={() => onDelete(a.id)} className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Delete Record"><Trash2 size={16} /></button>
+                      </div>
                     </td>
                   </tr>
                 );
