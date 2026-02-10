@@ -164,7 +164,8 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
     const doc = new jsPDF('l', 'mm', 'a4');
     const primaryColor = activeView === 'ifrs' ? [30, 58, 95] : [5, 150, 105];
     const isSars = activeView === 'sars';
-    const term = isSars ? 'W&T' : 'Depr';
+    const deprTerm = isSars ? 'Tax Wear & Tear' : 'Accum Depreciation';
+    const periodChargeTerm = isSars ? 'Charge for Year' : 'Depr Charge';
 
     doc.setFontSize(18); doc.text("SHUKU ASSET MANAGEMENT", 14, 15);
     doc.setFontSize(10); doc.text(`Entity: Lupo Bakery Group • ${reportMode.toUpperCase()} Report • ${startDate} to ${endDate}`, 14, 22);
@@ -173,10 +174,10 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
 
     const tableRows: any[] = [];
     const headerRow = reportMode === 'summary' 
-      ? ['Asset Class', 'Op Cost', 'Additions', 'Rev/Imp', 'Disposals', 'Closing Cost', `Op ${term}`, 'Charge', `Cl ${term}`, 'CARRYING VALUE']
-      : ['Asset Details', 'Tag ID', 'Acq Date', 'Op Cost', 'Additions', 'Rev/Imp', 'Disposals', 'Closing Cost', `Op ${term}`, 'Charge', `Cl ${term}`, 'VALUE'];
+      ? ['Asset Class', 'Op Bal', 'Additions', 'Rev/Imp', 'Disposals', 'Closing Cost', 'Op Accum', 'Charge', 'Cl Accum', 'CARRYING VALUE']
+      : ['Asset Details', 'Tag ID', 'Acq Date', 'Op Bal', 'Additions', 'Rev/Imp', 'Disposals', 'Closing Cost', 'Op Accum', 'Charge', 'Cl Accum', 'VALUE'];
 
-    // Define column styles for alignment
+    // Specific formatting for the column headers to make groupings obvious in 1D
     const colStyles: any = {};
     if (reportMode === 'detailed') {
       colStyles[0] = { cellWidth: 40 };
@@ -198,7 +199,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
       const t = groupTotals[catId];
 
       if (reportMode === 'detailed') {
-        tableRows.push([{ content: `CLASS: ${cat?.name}`, colSpan: 12, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
+        tableRows.push([{ content: `ASSET CLASS: ${cat?.name}`, colSpan: 12, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
         items.forEach(calc => {
           const asset = assets.find(a => a.id === calc.assetId)!;
           tableRows.push([
@@ -212,33 +213,33 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
             currencyFormatter.format(calc.closingCost),
             currencyFormatter.format(isSars ? calc.openingAccumulatedTaxDepr : calc.openingAccumulatedDepr),
             currencyFormatter.format(isSars ? calc.taxDeductionForPeriod : calc.periodicDepr),
-            currencyFormatter.format(isSars ? calc.closingAccumulatedTaxDepr : calc.closingAccumulatedDepr),
+            currencyFormatter.format(isSars ? calc.closingAccumulatedTaxDepr : calc.closingAccumulatedTaxDepr),
             currencyFormatter.format(isSars ? calc.taxValue : calc.nbv)
           ]);
         });
         tableRows.push([
           { content: `Subtotal: ${cat?.name}`, colSpan: 3, styles: { halign: 'right', fontStyle: 'bold' } },
-          currencyFormatter.format(t.openingCost),
-          currencyFormatter.format(t.additions),
-          currencyFormatter.format(t.revalImp),
-          currencyFormatter.format(t.disposals),
-          currencyFormatter.format(t.closingCost),
-          currencyFormatter.format(t.openingDepr),
-          currencyFormatter.format(t.periodicDepr),
-          currencyFormatter.format(t.closingDepr),
+          { content: currencyFormatter.format(t.openingCost), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.additions), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.revalImp), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.disposals), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.closingCost), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.openingDepr), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.periodicDepr), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.closingDepr), styles: { halign: 'right' } },
           { content: currencyFormatter.format(t.carryingValue), styles: { fontStyle: 'bold', halign: 'right' } }
         ]);
       } else {
         tableRows.push([
           { content: cat?.name, styles: { fontStyle: 'bold' } },
-          currencyFormatter.format(t.openingCost),
-          currencyFormatter.format(t.additions),
-          currencyFormatter.format(t.revalImp),
-          currencyFormatter.format(t.disposals),
-          currencyFormatter.format(t.closingCost),
-          currencyFormatter.format(t.openingDepr),
-          currencyFormatter.format(t.periodicDepr),
-          currencyFormatter.format(t.closingDepr),
+          { content: currencyFormatter.format(t.openingCost), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.additions), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.revalImp), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.disposals), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.closingCost), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.openingDepr), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.periodicDepr), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.closingDepr), styles: { halign: 'right' } },
           { content: currencyFormatter.format(t.carryingValue), styles: { fontStyle: 'bold', halign: 'right' } }
         ]);
       }
@@ -265,21 +266,24 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
     setVisibleCategoryIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
 
+  const summaryCols = hasRevImp ? 11 : 10;
+  const detailedCols = hasRevImp ? 13 : 12;
+
   return (
     <div className="space-y-6 pb-20 animate-in fade-in duration-300">
       <div className="no-print bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
         <div className="flex flex-col xl:flex-row justify-between items-start gap-6">
           <div className="flex flex-wrap gap-4 items-center">
             <div className="flex bg-slate-100 p-1 rounded-xl shadow-inner">
-              <button onClick={() => setActiveView('ifrs')} className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeView === 'ifrs' ? 'bg-[#1e3a5f] text-white shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}>IFRS</button>
-              <button onClick={() => setActiveView('sars')} className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeView === 'sars' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}>SARS</button>
+              <button onClick={() => setActiveView('ifrs')} className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeView === 'ifrs' ? 'bg-[#1e3a5f] text-white shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}>IFRS Basis</button>
+              <button onClick={() => setActiveView('sars')} className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeView === 'sars' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}>SARS Basis</button>
             </div>
             <div className="flex bg-slate-100 p-1 rounded-xl shadow-inner">
               <button onClick={() => setReportMode('detailed')} className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${reportMode === 'detailed' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500'}`}><ListTree size={14}/> Detailed</button>
               <button onClick={() => setReportMode('summary')} className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${reportMode === 'summary' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500'}`}><LayoutList size={14}/> Summary</button>
             </div>
             <select className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 text-xs font-bold text-slate-700 outline-none" value={selectedBranch} onChange={e => setSelectedBranch(e.target.value)}>
-              <option value="all">CONSOLIDATED</option>
+              <option value="all">CONSOLIDATED VIEW</option>
               {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
             </select>
           </div>
@@ -292,7 +296,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
         </div>
 
         <div className="pt-4 border-t border-slate-100">
-           <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Filter size={12}/> Class Multi-Filter</h4>
+           <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Filter size={12}/> Asset Class Multi-Filter</h4>
            <div className="flex flex-wrap gap-2">
               <button onClick={() => setVisibleCategoryIds(categories.map(c => c.id))} className="text-[9px] font-black uppercase bg-slate-900 text-white px-3 py-1.5 rounded-lg hover:bg-black transition-all">Select All</button>
               <button onClick={() => setVisibleCategoryIds([])} className="text-[9px] font-black uppercase bg-slate-100 text-slate-500 px-3 py-1.5 rounded-lg hover:bg-slate-200 transition-all">Clear All</button>
@@ -314,9 +318,9 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
           <div>
             <h2 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3">
               {reportMode === 'summary' ? <LayoutList size={28} /> : <FileBarChart size={28} />}
-              {activeView === 'ifrs' ? 'IAS 16 Movement' : 'SARS Tax Schedule'} ({reportMode})
+              {activeView === 'ifrs' ? 'IAS 16 Asset Movement' : 'SARS Tax Allowance Schedule'} ({reportMode})
             </h2>
-            <p className="text-sm opacity-70">Period: {startDate} to {endDate}</p>
+            <p className="text-sm opacity-70">Lupo Bakery Group • {startDate} to {endDate}</p>
           </div>
         </div>
 
@@ -324,17 +328,27 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
           <table className="w-full text-[10px] text-left border-collapse">
             <thead className="bg-slate-50 text-slate-500 font-black text-[8px] uppercase border-b border-slate-200">
               <tr className="divide-x divide-slate-200">
+                <th colSpan={reportMode === 'detailed' ? 3 : 1} className="px-4 py-2 border-b border-slate-200"></th>
+                <th colSpan={hasRevImp ? 5 : 4} className="px-2 py-2 text-center bg-slate-100 border-b border-slate-200">Cost Analysis Basis</th>
+                <th colSpan={3} className="px-2 py-2 text-center bg-slate-200/50 border-b border-slate-200">
+                  {activeView === 'ifrs' ? 'Accumulated Depreciation' : 'Accumulated Tax Wear & Tear'}
+                </th>
+                <th className="px-4 py-2 border-b border-slate-200"></th>
+              </tr>
+              <tr className="divide-x divide-slate-200">
                 <th className="px-4 py-4 sticky left-0 z-10 bg-white">{reportMode === 'summary' ? 'Asset Class' : 'Asset Details'}</th>
                 {reportMode === 'detailed' && <><th className="px-2 py-4 text-center">Tag ID</th><th className="px-2 py-4 text-center">Acq Date</th></>}
                 <th className="px-2 py-4 text-center">Op Bal</th>
                 <th className="px-2 py-4 text-center">Additions</th>
-                <th className="px-2 py-4 text-center">Rev / Imp</th>
+                {hasRevImp && <th className="px-2 py-4 text-center">Rev / Imp</th>}
                 <th className="px-2 py-4 text-center">Disposals</th>
                 <th className="px-2 py-4 text-center">Closing Cost</th>
-                <th className="px-2 py-4 text-center">Opening Accum</th>
+                <th className="px-2 py-4 text-center">Op Accum</th>
                 <th className="px-2 py-4 text-center">Charge</th>
-                <th className="px-2 py-4 text-center">Closing Accum</th>
-                <th className="px-4 py-4 text-right bg-slate-900 text-white min-w-[120px]">Carrying Value</th>
+                <th className="px-2 py-4 text-center">Cl Accum</th>
+                <th className="px-4 py-4 text-right bg-slate-900 text-white min-w-[120px]">
+                  {activeView === 'ifrs' ? 'Carrying Value (NBV)' : 'Tax Value'}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -352,7 +366,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
                       <React.Fragment key={catId}>
                         {reportMode === 'detailed' && (
                           <>
-                            <tr className="bg-slate-50"><td colSpan={13} className="px-4 py-2 font-black text-[9px] text-slate-400 uppercase tracking-widest border-l-4 border-blue-500">Class: {category?.name}</td></tr>
+                            <tr className="bg-slate-50 border-y border-slate-200"><td colSpan={detailedCols} className="px-4 py-2 font-black text-[9px] text-slate-400 uppercase tracking-widest border-l-4 border-blue-500">Class: {category?.name}</td></tr>
                             {items.map(calc => {
                               const asset = assets.find(a => a.id === calc.assetId)!;
                               return (
@@ -365,7 +379,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
                                   <td className="px-2 py-3 text-center text-slate-500 font-mono">{getAcqDate(asset)}</td>
                                   <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(calc.openingCost)}</td>
                                   <td className="px-2 py-3 text-right text-emerald-600 font-mono">+{currencyFormatter.format(calc.additions)}</td>
-                                  <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(calc.revaluations - calc.impairments)}</td>
+                                  {hasRevImp && <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(calc.revaluations - calc.impairments)}</td>}
                                   <td className="px-2 py-3 text-right text-red-600 font-mono">-{currencyFormatter.format(calc.disposals)}</td>
                                   <td className="px-2 py-3 text-right font-black font-mono">{currencyFormatter.format(calc.closingCost)}</td>
                                   <td className="px-2 py-3 text-right text-slate-400 font-mono">{currencyFormatter.format(isSars ? calc.openingAccumulatedTaxDepr : calc.openingAccumulatedDepr)}</td>
@@ -377,13 +391,13 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
                             })}
                           </>
                         )}
-                        <tr className={`${reportMode === 'summary' ? 'hover:bg-slate-50' : 'bg-slate-100/50'} font-black divide-x divide-slate-200`}>
+                        <tr className={`${reportMode === 'summary' ? 'hover:bg-slate-50' : 'bg-slate-100/50'} font-black divide-x divide-slate-200 border-t border-slate-200`}>
                           <td colSpan={reportMode === 'detailed' ? 3 : 1} className="px-4 py-3 text-left uppercase tracking-widest text-[8px] text-slate-500">
                             {reportMode === 'summary' ? category?.name : `Subtotal: ${category?.name}`}
                           </td>
                           <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(t.openingCost)}</td>
                           <td className="px-2 py-3 text-right font-mono text-emerald-600">{currencyFormatter.format(t.additions)}</td>
-                          <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(t.revalImp)}</td>
+                          {hasRevImp && <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(t.revalImp)}</td>}
                           <td className="px-2 py-3 text-right font-mono text-red-600">{currencyFormatter.format(t.disposals)}</td>
                           <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(t.closingCost)}</td>
                           <td className="px-2 py-3 text-right font-mono text-slate-500">{currencyFormatter.format(t.openingDepr)}</td>
@@ -399,7 +413,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
                     <td colSpan={reportMode === 'detailed' ? 3 : 1} className="px-4 py-5 text-right uppercase tracking-widest text-[10px]">GRAND TOTAL (CONSOLIDATED)</td>
                     <td className="px-2 py-5 text-right font-mono">{currencyFormatter.format(grandTotals.openingCost)}</td>
                     <td className="px-2 py-5 text-right font-mono text-emerald-400">{currencyFormatter.format(grandTotals.additions)}</td>
-                    <td className="px-2 py-5 text-right font-mono">{currencyFormatter.format(grandTotals.revalImp)}</td>
+                    {hasRevImp && <td className="px-2 py-5 text-right font-mono">{currencyFormatter.format(grandTotals.revalImp)}</td>}
                     <td className="px-2 py-5 text-right font-mono text-red-400">{currencyFormatter.format(grandTotals.disposals)}</td>
                     <td className="px-2 py-5 text-right font-mono">{currencyFormatter.format(grandTotals.closingCost)}</td>
                     <td className="px-2 py-5 text-right font-mono opacity-70">{currencyFormatter.format(grandTotals.openingDepr)}</td>
