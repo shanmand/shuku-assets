@@ -61,7 +61,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
     const groups: Record<string, typeof calculations> = {};
     calculations.forEach(c => {
       const asset = assets.find(a => a.id === c.assetId)!;
-      if ((c.openingCost || 0) === 0 && (c.additions || 0) === 0 && (c.closingCost || 0) === 0) return;
+      if ((c.openingCost || 0) === 0 && (c.additions || 0) === 0 && (c.closingCost || 0) === 0 && (c.disposals || 0) === 0) return;
       if (!groups[asset.categoryId]) groups[asset.categoryId] = [];
       groups[asset.categoryId].push(c);
     });
@@ -70,7 +70,9 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
       groups[catId].sort((a, b) => {
         const assetA = assets.find(as => as.id === a.assetId)!;
         const assetB = assets.find(as => as.id === b.assetId)!;
-        return getAcqDate(assetA).localeCompare(getAcqDate(assetB));
+        const dateA = new Date(getAcqDate(assetA)).getTime();
+        const dateB = new Date(getAcqDate(assetB)).getTime();
+        return dateA - dateB;
       });
     });
 
@@ -91,11 +93,12 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
         closingCost: acc.closingCost + curr.closingCost,
         openingDepr: acc.openingDepr + (isSars ? curr.openingAccumulatedTaxDepr : curr.openingAccumulatedDepr),
         periodicDepr: acc.periodicDepr + (isSars ? curr.taxDeductionForPeriod : curr.periodicDepr),
-        closingDepr: acc.closingDepr + (isSars ? curr.closingAccumulatedTaxDepr : curr.closingAccumulatedTaxDepr),
+        disposalDepr: acc.disposalDepr + (isSars ? curr.taxDeprOnDisposals : curr.accumulatedDeprOnDisposals),
+        closingDepr: acc.closingDepr + (isSars ? curr.closingAccumulatedTaxDepr : curr.closingAccumulatedDepr),
         carryingValue: acc.carryingValue + (isSars ? curr.taxValue : curr.nbv)
       }), {
         openingCost: 0, additions: 0, revalImp: 0, disposals: 0, closingCost: 0,
-        openingDepr: 0, periodicDepr: 0, closingDepr: 0, carryingValue: 0
+        openingDepr: 0, periodicDepr: 0, disposalDepr: 0, closingDepr: 0, carryingValue: 0
       });
     });
     return totals;
@@ -110,15 +113,19 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
       closingCost: acc.closingCost + curr.closingCost,
       openingDepr: acc.openingDepr + curr.openingDepr,
       periodicDepr: acc.periodicDepr + curr.periodicDepr,
+      disposalDepr: acc.disposalDepr + curr.disposalDepr,
       closingDepr: acc.closingDepr + curr.closingDepr,
       carryingValue: acc.carryingValue + curr.carryingValue
     }), {
       openingCost: 0, additions: 0, revalImp: 0, disposals: 0, closingCost: 0,
-      openingDepr: 0, periodicDepr: 0, closingDepr: 0, carryingValue: 0
+      openingDepr: 0, periodicDepr: 0, disposalDepr: 0, closingDepr: 0, carryingValue: 0
     });
   }, [groupTotals]);
 
   const exportToExcel = () => {
+    const isSars = activeView === 'sars';
+    const term = isSars ? 'W&T' : 'Depr';
+    
     let data = [];
     if (reportMode === 'summary') {
       data = Object.keys(groupTotals).map(catId => {
@@ -129,11 +136,12 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
           'Opening Cost': t.openingCost,
           'Additions': t.additions,
           'Revaluations/Impairments': t.revalImp,
-          'Disposals': t.disposals,
+          'Disposals (Cost)': t.disposals,
           'Closing Cost': t.closingCost,
-          'Opening Accum': t.openingDepr,
-          'Charge': t.periodicDepr,
-          'Closing Accum': t.closingDepr,
+          [`Opening Accum ${term}`]: t.openingDepr,
+          [`${term} Charge`]: t.periodicDepr,
+          [`${term} on Disposals`]: t.disposalDepr,
+          [`Closing Accum ${term}`]: t.closingDepr,
           'Carrying Value': t.carryingValue
         };
       });
@@ -145,28 +153,33 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
           'Asset Number': asset.assetNumber,
           'Asset Name': asset.name,
           'Tag ID': asset.tagId,
+          'Acq Date': getAcqDate(asset),
           'Class': cat?.name,
-          'Op Cost': calc.openingCost,
+          'Opening Cost': calc.openingCost,
           'Additions': calc.additions,
+          'Revaluations/Impairments': (calc.revaluations || 0) - (calc.impairments || 0),
+          'Disposals (Cost)': calc.disposals,
           'Closing Cost': calc.closingCost,
-          'NBV/Tax Val': activeView === 'ifrs' ? calc.nbv : calc.taxValue
+          [`Opening Accum ${term}`]: isSars ? calc.openingAccumulatedTaxDepr : calc.openingAccumulatedDepr,
+          [`${term} Charge`]: isSars ? calc.taxDeductionForPeriod : calc.periodicDepr,
+          [`${term} on Disposals`]: isSars ? calc.taxDeprOnDisposals : calc.accumulatedDeprOnDisposals,
+          [`Closing Accum ${term}`]: isSars ? calc.closingAccumulatedTaxDepr : calc.closingAccumulatedDepr,
+          'Carrying Value': isSars ? calc.taxValue : calc.nbv
         };
       });
     }
 
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Report");
-    XLSX.writeFile(wb, `Lupo_${reportMode}_Report_${format(new Date(), 'yyyyMMdd')}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "Asset Report");
+    XLSX.writeFile(wb, `Lupo_${activeView.toUpperCase()}_${reportMode}_${format(new Date(), 'yyyyMMdd')}.xlsx`);
   };
 
   const exportToPDF = () => {
     const doc = new jsPDF('l', 'mm', 'a4');
     const primaryColor = activeView === 'ifrs' ? [30, 58, 95] : [5, 150, 105];
     const isSars = activeView === 'sars';
-    const deprTerm = isSars ? 'Tax Wear & Tear' : 'Accum Depreciation';
-    const periodChargeTerm = isSars ? 'Charge for Year' : 'Depr Charge';
-
+    
     doc.setFontSize(18); doc.text("SHUKU ASSET MANAGEMENT", 14, 15);
     doc.setFontSize(10); doc.text(`Entity: Lupo Bakery Group • ${reportMode.toUpperCase()} Report • ${startDate} to ${endDate}`, 14, 22);
     doc.setFontSize(14); doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
@@ -174,23 +187,18 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
 
     const tableRows: any[] = [];
     const headerRow = reportMode === 'summary' 
-      ? ['Asset Class', 'Op Bal', 'Additions', 'Rev/Imp', 'Disposals', 'Closing Cost', 'Op Accum', 'Charge', 'Cl Accum', 'CARRYING VALUE']
-      : ['Asset Details', 'Tag ID', 'Acq Date', 'Op Bal', 'Additions', 'Rev/Imp', 'Disposals', 'Closing Cost', 'Op Accum', 'Charge', 'Cl Accum', 'VALUE'];
+      ? ['Asset Class', 'Op Cost', 'Additions', 'Rev/Imp', 'Disposals', 'Closing Cost', 'Op Accum', 'Charge', 'Disp Accum', 'Cl Accum', 'VALUE']
+      : ['Asset Details', 'Tag ID', 'Acq Date', 'Op Cost', 'Additions', 'Rev/Imp', 'Disposals', 'Closing Cost', 'Op Accum', 'Charge', 'Disp Accum', 'Cl Accum', 'VALUE'];
 
-    // Specific formatting for the column headers to make groupings obvious in 1D
     const colStyles: any = {};
     if (reportMode === 'detailed') {
-      colStyles[0] = { cellWidth: 40 };
-      colStyles[1] = { halign: 'center', cellWidth: 18 };
-      colStyles[2] = { halign: 'center', cellWidth: 18 };
-      for (let i = 3; i <= 11; i++) {
-        colStyles[i] = { halign: 'right' };
-      }
+      colStyles[0] = { cellWidth: 35 };
+      colStyles[1] = { halign: 'center', cellWidth: 15 };
+      colStyles[2] = { halign: 'center', cellWidth: 15 };
+      for (let i = 3; i <= 12; i++) colStyles[i] = { halign: 'right' };
     } else {
-      colStyles[0] = { cellWidth: 50 };
-      for (let i = 1; i <= 9; i++) {
-        colStyles[i] = { halign: 'right' };
-      }
+      colStyles[0] = { cellWidth: 45 };
+      for (let i = 1; i <= 10; i++) colStyles[i] = { halign: 'right' };
     }
 
     Object.keys(groupedCalculations).forEach(catId => {
@@ -199,7 +207,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
       const t = groupTotals[catId];
 
       if (reportMode === 'detailed') {
-        tableRows.push([{ content: `ASSET CLASS: ${cat?.name}`, colSpan: 12, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
+        tableRows.push([{ content: `CLASS: ${cat?.name}`, colSpan: 13, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
         items.forEach(calc => {
           const asset = assets.find(a => a.id === calc.assetId)!;
           tableRows.push([
@@ -213,7 +221,8 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
             currencyFormatter.format(calc.closingCost),
             currencyFormatter.format(isSars ? calc.openingAccumulatedTaxDepr : calc.openingAccumulatedDepr),
             currencyFormatter.format(isSars ? calc.taxDeductionForPeriod : calc.periodicDepr),
-            currencyFormatter.format(isSars ? calc.closingAccumulatedTaxDepr : calc.closingAccumulatedTaxDepr),
+            currencyFormatter.format(isSars ? calc.taxDeprOnDisposals : calc.accumulatedDeprOnDisposals),
+            currencyFormatter.format(isSars ? calc.closingAccumulatedTaxDepr : calc.closingAccumulatedDepr),
             currencyFormatter.format(isSars ? calc.taxValue : calc.nbv)
           ]);
         });
@@ -226,6 +235,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
           { content: currencyFormatter.format(t.closingCost), styles: { halign: 'right' } },
           { content: currencyFormatter.format(t.openingDepr), styles: { halign: 'right' } },
           { content: currencyFormatter.format(t.periodicDepr), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.disposalDepr), styles: { halign: 'right' } },
           { content: currencyFormatter.format(t.closingDepr), styles: { halign: 'right' } },
           { content: currencyFormatter.format(t.carryingValue), styles: { fontStyle: 'bold', halign: 'right' } }
         ]);
@@ -239,23 +249,23 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
           { content: currencyFormatter.format(t.closingCost), styles: { halign: 'right' } },
           { content: currencyFormatter.format(t.openingDepr), styles: { halign: 'right' } },
           { content: currencyFormatter.format(t.periodicDepr), styles: { halign: 'right' } },
+          { content: currencyFormatter.format(t.disposalDepr), styles: { halign: 'right' } },
           { content: currencyFormatter.format(t.closingDepr), styles: { halign: 'right' } },
           { content: currencyFormatter.format(t.carryingValue), styles: { fontStyle: 'bold', halign: 'right' } }
         ]);
       }
     });
 
-    // Grand Total Row
     const grandRow = [
       { content: 'GRAND TOTAL', colSpan: reportMode === 'summary' ? 1 : 3, styles: { halign: 'right', fontStyle: 'bold', fillColor: [15, 23, 42], textColor: [255, 255, 255] } },
-      ...[grandTotals.openingCost, grandTotals.additions, grandTotals.revalImp, grandTotals.disposals, grandTotals.closingCost, grandTotals.openingDepr, grandTotals.periodicDepr, grandTotals.closingDepr, grandTotals.carryingValue].map(val => ({ content: currencyFormatter.format(val), styles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'right' } }))
+      ...[grandTotals.openingCost, grandTotals.additions, grandTotals.revalImp, grandTotals.disposals, grandTotals.closingCost, grandTotals.openingDepr, grandTotals.periodicDepr, grandTotals.disposalDepr, grandTotals.closingDepr, grandTotals.carryingValue].map(val => ({ content: currencyFormatter.format(val), styles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'right' } }))
     ];
     tableRows.push(grandRow);
 
     autoTable(doc, {
       startY: 38, head: [headerRow], body: tableRows, theme: 'grid',
-      styles: { fontSize: 6, cellPadding: 1.5 },
-      headStyles: { fillColor: primaryColor as any, textColor: [255, 255, 255], halign: 'center' },
+      styles: { fontSize: 5.5, cellPadding: 1 },
+      headStyles: { fillColor: primaryColor as any, textColor: [255, 255, 255], halign: 'center', fontSize: 6 },
       columnStyles: colStyles
     });
 
@@ -265,9 +275,6 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
   const toggleCategory = (id: string) => {
     setVisibleCategoryIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
-
-  const summaryCols = hasRevImp ? 11 : 10;
-  const detailedCols = hasRevImp ? 13 : 12;
 
   return (
     <div className="space-y-6 pb-20 animate-in fade-in duration-300">
@@ -330,8 +337,8 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
               <tr className="divide-x divide-slate-200">
                 <th colSpan={reportMode === 'detailed' ? 3 : 1} className="px-4 py-2 border-b border-slate-200"></th>
                 <th colSpan={hasRevImp ? 5 : 4} className="px-2 py-2 text-center bg-slate-100 border-b border-slate-200">Cost Analysis Basis</th>
-                <th colSpan={3} className="px-2 py-2 text-center bg-slate-200/50 border-b border-slate-200">
-                  {activeView === 'ifrs' ? 'Accumulated Depreciation' : 'Accumulated Tax Wear & Tear'}
+                <th colSpan={4} className="px-2 py-2 text-center bg-slate-200/50 border-b border-slate-200">
+                  {activeView === 'ifrs' ? 'Accumulated Depreciation Movement' : 'Accumulated Tax Wear & Tear'}
                 </th>
                 <th className="px-4 py-2 border-b border-slate-200"></th>
               </tr>
@@ -345,15 +352,16 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
                 <th className="px-2 py-4 text-center">Closing Cost</th>
                 <th className="px-2 py-4 text-center">Op Accum</th>
                 <th className="px-2 py-4 text-center">Charge</th>
+                <th className="px-2 py-4 text-center">On Disposal</th>
                 <th className="px-2 py-4 text-center">Cl Accum</th>
                 <th className="px-4 py-4 text-right bg-slate-900 text-white min-w-[120px]">
-                  {activeView === 'ifrs' ? 'Carrying Value (NBV)' : 'Tax Value'}
+                  {activeView === 'ifrs' ? 'Carrying Value' : 'Tax Value'}
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {Object.keys(groupedCalculations).length === 0 ? (
-                <tr><td colSpan={13} className="px-4 py-24 text-center text-slate-300 font-bold uppercase tracking-widest">No assets selected for display</td></tr>
+                <tr><td colSpan={14} className="px-4 py-24 text-center text-slate-300 font-bold uppercase tracking-widest">No assets selected for display</td></tr>
               ) : (
                 <>
                   {Object.keys(groupedCalculations).map(catId => {
@@ -366,7 +374,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
                       <React.Fragment key={catId}>
                         {reportMode === 'detailed' && (
                           <>
-                            <tr className="bg-slate-50 border-y border-slate-200"><td colSpan={detailedCols} className="px-4 py-2 font-black text-[9px] text-slate-400 uppercase tracking-widest border-l-4 border-blue-500">Class: {category?.name}</td></tr>
+                            <tr className="bg-slate-50 border-y border-slate-200"><td colSpan={14} className="px-4 py-2 font-black text-[9px] text-slate-400 uppercase tracking-widest border-l-4 border-blue-500">Class: {category?.name}</td></tr>
                             {items.map(calc => {
                               const asset = assets.find(a => a.id === calc.assetId)!;
                               return (
@@ -384,6 +392,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
                                   <td className="px-2 py-3 text-right font-black font-mono">{currencyFormatter.format(calc.closingCost)}</td>
                                   <td className="px-2 py-3 text-right text-slate-400 font-mono">{currencyFormatter.format(isSars ? calc.openingAccumulatedTaxDepr : calc.openingAccumulatedDepr)}</td>
                                   <td className="px-2 py-3 text-right text-blue-600 font-mono">{currencyFormatter.format(isSars ? calc.taxDeductionForPeriod : calc.periodicDepr)}</td>
+                                  <td className="px-2 py-3 text-right text-red-400 font-mono">-{currencyFormatter.format(isSars ? calc.taxDeprOnDisposals : calc.accumulatedDeprOnDisposals)}</td>
                                   <td className="px-2 py-3 text-right font-black font-mono">{currencyFormatter.format(isSars ? calc.closingAccumulatedTaxDepr : calc.closingAccumulatedDepr)}</td>
                                   <td className="px-4 py-3 text-right bg-slate-50 font-black font-mono">{currencyFormatter.format(isSars ? calc.taxValue : calc.nbv)}</td>
                                 </tr>
@@ -402,6 +411,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
                           <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(t.closingCost)}</td>
                           <td className="px-2 py-3 text-right font-mono text-slate-500">{currencyFormatter.format(t.openingDepr)}</td>
                           <td className="px-2 py-3 text-right font-mono text-blue-600">{currencyFormatter.format(t.periodicDepr)}</td>
+                          <td className="px-2 py-3 text-right font-mono text-red-400">-{currencyFormatter.format(t.disposalDepr)}</td>
                           <td className="px-2 py-3 text-right font-mono">{currencyFormatter.format(t.closingDepr)}</td>
                           <td className="px-4 py-3 text-right bg-slate-200/50 font-mono">{currencyFormatter.format(t.carryingValue)}</td>
                         </tr>
@@ -418,6 +428,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
                     <td className="px-2 py-5 text-right font-mono">{currencyFormatter.format(grandTotals.closingCost)}</td>
                     <td className="px-2 py-5 text-right font-mono opacity-70">{currencyFormatter.format(grandTotals.openingDepr)}</td>
                     <td className="px-2 py-5 text-right font-mono text-blue-300">{currencyFormatter.format(grandTotals.periodicDepr)}</td>
+                    <td className="px-2 py-5 text-right font-mono text-red-400">{currencyFormatter.format(grandTotals.disposalDepr)}</td>
                     <td className="px-2 py-5 text-right font-mono">{currencyFormatter.format(grandTotals.closingDepr)}</td>
                     <td className="px-4 py-5 text-right bg-black/30 font-mono text-lg">{currencyFormatter.format(grandTotals.carryingValue)}</td>
                   </tr>
