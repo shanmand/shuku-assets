@@ -176,6 +176,22 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
       ? ['Asset Class', 'Op Cost', 'Additions', 'Rev/Imp', 'Disposals', 'Closing Cost', `Op ${term}`, 'Charge', `Cl ${term}`, 'CARRYING VALUE']
       : ['Asset Details', 'Tag ID', 'Acq Date', 'Op Cost', 'Additions', 'Rev/Imp', 'Disposals', 'Closing Cost', `Op ${term}`, 'Charge', `Cl ${term}`, 'VALUE'];
 
+    // Define column styles for alignment
+    const colStyles: any = {};
+    if (reportMode === 'detailed') {
+      colStyles[0] = { cellWidth: 40 };
+      colStyles[1] = { halign: 'center', cellWidth: 18 };
+      colStyles[2] = { halign: 'center', cellWidth: 18 };
+      for (let i = 3; i <= 11; i++) {
+        colStyles[i] = { halign: 'right' };
+      }
+    } else {
+      colStyles[0] = { cellWidth: 50 };
+      for (let i = 1; i <= 9; i++) {
+        colStyles[i] = { halign: 'right' };
+      }
+    }
+
     Object.keys(groupedCalculations).forEach(catId => {
       const cat = categories.find(c => c.id === catId);
       const items = groupedCalculations[catId];
@@ -210,7 +226,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
           currencyFormatter.format(t.openingDepr),
           currencyFormatter.format(t.periodicDepr),
           currencyFormatter.format(t.closingDepr),
-          { content: currencyFormatter.format(t.carryingValue), styles: { fontStyle: 'bold' } }
+          { content: currencyFormatter.format(t.carryingValue), styles: { fontStyle: 'bold', halign: 'right' } }
         ]);
       } else {
         tableRows.push([
@@ -223,7 +239,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
           currencyFormatter.format(t.openingDepr),
           currencyFormatter.format(t.periodicDepr),
           currencyFormatter.format(t.closingDepr),
-          { content: currencyFormatter.format(t.carryingValue), styles: { fontStyle: 'bold' } }
+          { content: currencyFormatter.format(t.carryingValue), styles: { fontStyle: 'bold', halign: 'right' } }
         ]);
       }
     });
@@ -231,14 +247,15 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
     // Grand Total Row
     const grandRow = [
       { content: 'GRAND TOTAL', colSpan: reportMode === 'summary' ? 1 : 3, styles: { halign: 'right', fontStyle: 'bold', fillColor: [15, 23, 42], textColor: [255, 255, 255] } },
-      ...[grandTotals.openingCost, grandTotals.additions, grandTotals.revalImp, grandTotals.disposals, grandTotals.closingCost, grandTotals.openingDepr, grandTotals.periodicDepr, grandTotals.closingDepr, grandTotals.carryingValue].map(val => ({ content: currencyFormatter.format(val), styles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' } }))
+      ...[grandTotals.openingCost, grandTotals.additions, grandTotals.revalImp, grandTotals.disposals, grandTotals.closingCost, grandTotals.openingDepr, grandTotals.periodicDepr, grandTotals.closingDepr, grandTotals.carryingValue].map(val => ({ content: currencyFormatter.format(val), styles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'right' } }))
     ];
     tableRows.push(grandRow);
 
     autoTable(doc, {
       startY: 38, head: [headerRow], body: tableRows, theme: 'grid',
       styles: { fontSize: 6, cellPadding: 1.5 },
-      headStyles: { fillColor: primaryColor as any, textColor: [255, 255, 255] }
+      headStyles: { fillColor: primaryColor as any, textColor: [255, 255, 255], halign: 'center' },
+      columnStyles: colStyles
     });
 
     doc.save(`Lupo_${activeView}_${reportMode}_Report.pdf`);
