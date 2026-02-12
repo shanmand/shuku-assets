@@ -1,4 +1,3 @@
-
 import { differenceInDays, isBefore, isAfter, isValid } from 'date-fns';
 import { Asset, DepreciationCalculation, AssetComponent, TaxStrategy, AssetCategory, AssetStatus } from '../types';
 
@@ -70,10 +69,15 @@ const calculateComponentDepreciation = (
   
   const getIFRSValuesAt = (targetDate: Date) => {
     const normalizedTarget = startOfDay(targetDate);
-    if (isBefore(normalizedTarget, acqDate)) return { cost: 0, accumDepr: 0, impairments: 0, revaluations: 0 };
     
+    // If targeted date is before acquisition, everything is 0
+    if (isBefore(normalizedTarget, acqDate)) {
+      return { cost: 0, accumDepr: 0, impairments: 0, revaluations: 0, residual: 0 };
+    }
+    
+    // If targeted date is ON or AFTER disposal date, balance sheet values are 0
     if (dispDate && (isAfter(normalizedTarget, subDays(dispDate, 1)) || normalizedTarget.getTime() === dispDate.getTime())) {
-      return { cost: 0, accumDepr: 0, impairments: 0, revaluations: 0 };
+      return { cost: 0, accumDepr: 0, impairments: 0, revaluations: 0, residual: 0 };
     }
 
     const effectiveDeprEnd = dispDate && isAfter(normalizedTarget, subDays(dispDate, 1)) ? subDays(dispDate, 1) : normalizedTarget;
@@ -86,17 +90,12 @@ const calculateComponentDepreciation = (
     const totalRevalImpact = relevantRevals.reduce((acc, curr) => curr.newFairValue - comp.cost, 0);
     const totalImpairment = (comp.impairmentLoss || 0);
 
-    // IFRS DEPRECIATION LOGIC: Base must stop at Residual Value
     const grossCarryingAmount = comp.cost + totalRevalImpact - totalImpairment;
     const residual = comp.residualValue || 0;
-    
-    // Depreciable amount is the portion that can be written off
     const depreciableAmount = Math.max(0, grossCarryingAmount - residual);
     
     const annualDepr = comp.usefulLifeYears > 0 ? depreciableAmount / comp.usefulLifeYears : 0;
     const dailyDeprRate = annualDepr / 365.25;
-    
-    // Cap accumulated depreciation at the depreciable amount to ensure carrying value >= residual
     const accumDepr = Math.min(depreciableAmount, dailyDeprRate * daysHeld);
     
     return { 
@@ -117,8 +116,6 @@ const calculateComponentDepreciation = (
     }
 
     const daysHeld = Math.max(0, differenceInDays(normalizedTarget, acqDate) + 1);
-    
-    // Calculate Fiscal Year based Tax Year Index
     const fyAcq = getFiscalYear(acqDate);
     const fyTarget = getFiscalYear(normalizedTarget);
     const currentTaxYear = Math.max(1, fyTarget - fyAcq + 1);
@@ -126,11 +123,9 @@ const calculateComponentDepreciation = (
     let accumTaxDepr = 0;
 
     if (category.taxStrategy === TaxStrategy.STANDARD_FLAT) {
-      // Pro-rated Section 11(e) wear and tear
       const annualTaxDepr = comp.cost * (category.defaultTaxRate / 100);
       accumTaxDepr = Math.min(comp.cost, (annualTaxDepr / 365.25) * daysHeld);
     } else {
-      // Accelerated Allowances (12B, 12C, 13)
       for (let y = 1; y <= currentTaxYear; y++) {
         accumTaxDepr += getTaxYearDeduction(comp, category.taxStrategy, y);
       }
@@ -163,22 +158,28 @@ const calculateComponentDepreciation = (
   let recoupment = 0;
 
   if (dispDate && isAfter(dispDate, dayBeforeStart) && (isBefore(dispDate, reportEndDate) || dispDate.getTime() === startOfDay(reportEndDate).getTime())) {
-    disposals = comp.cost + ifrsCl.revaluations - ifrsCl.impairments;
-    const valAtDeprEnd = getIFRSValuesAt(subDays(dispDate, 1));
-    accumDeprOnDisp = valAtDeprEnd.accumDepr;
-    
-    const taxValAtDeprEnd = getSARSValuesAt(subDays(dispDate, 1));
-    taxDeprOnDisp = taxValAtDeprEnd.accumTaxDepr;
+    // For movement schedule, "disposals" column represents the carrying amount being REMOVED.
+    // We get values at the day before disposal to see what was actually on the books.
+    const dayBeforeDisp = subDays(dispDate, 1);
+    const valAtDisp = getIFRSValuesAt(dayBeforeDisp);
+    const taxValAtDisp = getSARSValuesAt(dayBeforeDisp);
 
-    const nbvAtDisp = (comp.cost + ifrsCl.revaluations - ifrsCl.impairments) - accumDeprOnDisp;
+    disposals = valAtDisp.cost + valAtDisp.revaluations - valAtDisp.impairments;
+    accumDeprOnDisp = valAtDisp.accumDepr;
+    taxDeprOnDisp = taxValAtDisp.accumTaxDepr;
+
+    const nbvAtDisp = disposals - accumDeprOnDisp;
     profitOnDisp = (comp.disposalProceeds || 0) - nbvAtDisp;
     
     const proceeds = comp.disposalProceeds || 0;
-    if (proceeds > taxValAtDeprEnd.taxValue) {
-      recoupment = Math.min(proceeds - taxValAtDeprEnd.taxValue, comp.cost - taxValAtDeprEnd.taxValue);
+    if (proceeds > taxValAtDisp.taxValue) {
+      recoupment = Math.min(proceeds - taxValAtDisp.taxValue, comp.cost - taxValAtDisp.taxValue);
     }
   }
 
+  // Periodic depreciation (The "Charge")
+  // Movement Formula: Closing Accum = Opening Accum + Charge - DisposalsAccum
+  // Therefore: Charge = Closing Accum - Opening Accum + DisposalsAccum
   const periodicDepr = Math.max(0, ifrsCl.accumDepr - ifrsOp.accumDepr + accumDeprOnDisp);
   const taxDedForPeriod = Math.max(0, sarsCl.accumTaxDepr - sarsOp.accumTaxDepr + taxDeprOnDisp);
 
@@ -200,8 +201,8 @@ const calculateComponentDepreciation = (
     taxDeprOnDisposals: taxDeprOnDisp,
     closingAccumulatedTaxDepr: sarsCl.accumTaxDepr,
     taxYearOfAsset: sarsCl.currentTaxYear,
-    profitOnDisposal: disposals > 0 ? profitOnDisp : 0,
-    recoupment: disposals > 0 ? recoupment : 0,
+    profitOnDisposal: profitOnDisp,
+    recoupment: recoupment,
     hasDisposal: disposals > 0
   };
 };
@@ -259,7 +260,7 @@ export const calculateDepreciation = (
   return {
     assetId: asset.id,
     ...total,
-    profitOnDisposal: total.hasAnyDisposal ? total.profitOnDisposal : undefined,
-    recoupment: total.hasAnyDisposal ? total.recoupment : undefined
+    profitOnDisposal: total.hasAnyDisposal ? total.profitOnDisposal : 0,
+    recoupment: total.hasAnyDisposal ? total.recoupment : 0
   };
 };

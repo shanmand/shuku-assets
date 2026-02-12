@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Asset, AssetCategory, AssetLocation } from '../types';
+import { Asset, AssetCategory, AssetLocation, DepreciationCalculation } from '../types';
 import { calculateDepreciation } from '../services/assetService';
 import { isValid, format } from 'date-fns';
 import { Printer, FileSpreadsheet, FileBarChart, ReceiptText, FileDown, CheckSquare, Square, LayoutList, ListTree, Filter } from 'lucide-react';
@@ -58,7 +58,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
   }, [calculations]);
 
   const groupedCalculations = useMemo(() => {
-    const groups: Record<string, typeof calculations> = {};
+    const groups: Record<string, DepreciationCalculation[]> = {};
     calculations.forEach(c => {
       const asset = assets.find(a => a.id === c.assetId)!;
       if ((c.openingCost || 0) === 0 && (c.additions || 0) === 0 && (c.closingCost || 0) === 0 && (c.disposals || 0) === 0) return;
@@ -84,8 +84,9 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
     const isSars = activeView === 'sars';
 
     Object.keys(groupedCalculations).forEach(catId => {
-      const items = groupedCalculations[catId];
-      totals[catId] = items.reduce((acc, curr) => ({
+      const items = groupedCalculations[catId] as DepreciationCalculation[];
+      // Fix: Add explicit types for acc and curr to avoid unknown property errors
+      totals[catId] = items.reduce((acc: any, curr: DepreciationCalculation) => ({
         openingCost: acc.openingCost + curr.openingCost,
         additions: acc.additions + curr.additions,
         revalImp: acc.revalImp + (curr.revaluations || 0) - (curr.impairments || 0),
@@ -146,7 +147,8 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
         };
       });
     } else {
-      data = Object.values(groupedCalculations).flat().map(calc => {
+      // Fix: Cast flat map result to DepreciationCalculation[] to ensure calc properties are accessible
+      data = (Object.values(groupedCalculations).flat() as DepreciationCalculation[]).map(calc => {
         const asset = assets.find(a => a.id === calc.assetId)!;
         const cat = categories.find(c => c.id === asset.categoryId);
         return {
@@ -203,7 +205,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
 
     Object.keys(groupedCalculations).forEach(catId => {
       const cat = categories.find(c => c.id === catId);
-      const items = groupedCalculations[catId];
+      const items = groupedCalculations[catId] as DepreciationCalculation[];
       const t = groupTotals[catId];
 
       if (reportMode === 'detailed') {
@@ -366,7 +368,7 @@ const ReportingSuite: React.FC<ReportingSuiteProps> = ({ assets, categories, loc
                 <>
                   {Object.keys(groupedCalculations).map(catId => {
                     const category = categories.find(c => c.id === catId);
-                    const items = groupedCalculations[catId];
+                    const items = groupedCalculations[catId] as DepreciationCalculation[];
                     const t = groupTotals[catId];
                     const isSars = activeView === 'sars';
 
