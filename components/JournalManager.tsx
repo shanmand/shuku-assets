@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Asset, JournalEntry, AssetCategory, AssetLocation } from '../types';
 import { calculateDepreciation } from '../services/assetService';
 import { format, endOfMonth } from 'date-fns';
-import { BookText, Download, Calculator, Filter } from 'lucide-react';
+import { BookText, Download, Calculator, Filter, Tag } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 // Custom implementation of startOfMonth as it is missing from date-fns export in this environment
@@ -19,6 +19,7 @@ interface JournalManagerProps {
 
 const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, locations, selectedMonth }) => {
   const [selectedBranch, setSelectedBranch] = useState<string>('all');
+  const [selectedType, setSelectedType] = useState<'all' | 'Depreciation' | 'Addition'>('all');
   
   const branches = useMemo(() => locations.filter(u => u.type === 'Branch'), [locations]);
 
@@ -69,7 +70,8 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
           description: `Consolidated Monthly Depr - ${category.name}`,
           debit: movement.periodicDepr,
           credit: 0,
-          branchId: movement.branchId
+          branchId: movement.branchId,
+          type: 'Depreciation'
         });
         entries.push({
           id: `accum-${movement.categoryId}-${movement.branchId}`,
@@ -79,7 +81,8 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
           description: `Consolidated Monthly Depr - ${category.name}`,
           debit: 0,
           credit: movement.periodicDepr,
-          branchId: movement.branchId
+          branchId: movement.branchId,
+          type: 'Depreciation'
         });
       }
 
@@ -92,7 +95,8 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
           description: `Consolidated Monthly Additions - ${category.name}`,
           debit: movement.additions,
           credit: 0,
-          branchId: movement.branchId
+          branchId: movement.branchId,
+          type: 'Addition'
         });
         entries.push({
           id: `pay-${movement.categoryId}-${movement.branchId}`,
@@ -102,17 +106,21 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
           description: `Consolidated Monthly Additions - ${category.name}`,
           debit: 0,
           credit: movement.additions,
-          branchId: movement.branchId
+          branchId: movement.branchId,
+          type: 'Addition'
         });
       }
     });
 
-    return entries;
-  }, [filteredAssets, categories, selectedMonth]);
+    // Apply type filter
+    if (selectedType === 'all') return entries;
+    return entries.filter(e => e.type === selectedType);
+  }, [filteredAssets, categories, selectedMonth, selectedType]);
 
   const exportJournals = () => {
     const ws = XLSX.utils.json_to_sheet(journals.map(j => ({
       Date: j.date,
+      Type: j.type,
       'Account Code': j.accountCode,
       'Account Name': j.accountName,
       Description: j.description,
@@ -122,7 +130,7 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
     })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Consolidated GL Journals");
-    XLSX.writeFile(wb, `Consolidated_Journals_${selectedMonth}_${selectedBranch === 'all' ? 'FULL' : 'BRANCH'}.xlsx`);
+    XLSX.writeFile(wb, `Consolidated_Journals_${selectedMonth}_${selectedType.toUpperCase()}_${selectedBranch === 'all' ? 'FULL' : 'BRANCH'}.xlsx`);
   };
 
   const currencyFormatter = new Intl.NumberFormat('en-ZA', { 
@@ -134,7 +142,7 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6 no-print">
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 no-print">
         <div className="flex items-center gap-6">
           <div className="bg-blue-50 p-3 rounded-xl text-blue-600">
             <BookText size={24} />
@@ -145,7 +153,20 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
           </div>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
+            <Tag size={14} className="text-slate-400" />
+            <select 
+              className="bg-transparent text-[10px] font-black uppercase tracking-widest outline-none cursor-pointer pr-4"
+              value={selectedType}
+              onChange={(e) => setSelectedType(e.target.value as any)}
+            >
+              <option value="all">ALL JOURNAL TYPES</option>
+              <option value="Depreciation">DEPRECIATION ONLY</option>
+              <option value="Addition">ADDITIONS ONLY</option>
+            </select>
+          </div>
+
           <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
             <Filter size={14} className="text-slate-400" />
             <select 
@@ -174,6 +195,7 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-black uppercase text-[9px] tracking-widest">
               <tr>
                 <th className="px-6 py-5 text-left">Date</th>
+                <th className="px-6 py-5 text-left">Type</th>
                 <th className="px-6 py-5 text-left">Account</th>
                 <th className="px-6 py-5 text-left">Consolidated Description</th>
                 {selectedBranch === 'all' && <th className="px-6 py-5 text-left">Branch</th>}
@@ -184,10 +206,10 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
             <tbody className="divide-y divide-slate-100">
               {journals.length === 0 ? (
                 <tr>
-                  <td colSpan={selectedBranch === 'all' ? 6 : 5} className="px-6 py-24 text-center">
+                  <td colSpan={selectedBranch === 'all' ? 7 : 6} className="px-6 py-24 text-center">
                     <div className="flex flex-col items-center gap-4 text-slate-300">
                       <Calculator size={64} strokeWidth={1} />
-                      <p className="font-black uppercase tracking-widest text-[10px]">No consolidated activity found</p>
+                      <p className="font-black uppercase tracking-widest text-[10px]">No activity found matching filters</p>
                     </div>
                   </td>
                 </tr>
@@ -195,6 +217,13 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
                 journals.map((j, i) => (
                   <tr key={`${j.id}-${i}`} className="hover:bg-blue-50/30 transition-colors group">
                     <td className="px-6 py-4 font-mono text-slate-500 text-[11px]">{j.date}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${
+                        j.type === 'Depreciation' ? 'bg-orange-50 text-orange-600' : 'bg-emerald-50 text-emerald-600'
+                      }`}>
+                        {j.type}
+                      </span>
+                    </td>
                     <td className="px-6 py-4">
                       <span className="font-black text-slate-800 block text-[12px]">{j.accountCode}</span>
                       <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">{j.accountName}</span>
@@ -230,7 +259,7 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
             {journals.length > 0 && (
               <tfoot className="bg-slate-900 text-white font-black text-[11px] uppercase tracking-widest">
                 <tr>
-                  <td colSpan={selectedBranch === 'all' ? 4 : 3} className="px-6 py-4 text-right">Trial Balance Totals</td>
+                  <td colSpan={selectedBranch === 'all' ? 5 : 4} className="px-6 py-4 text-right">Trial Balance Totals</td>
                   <td className="px-6 py-4 text-right font-mono">
                     {currencyFormatter.format(journals.reduce((sum, j) => sum + j.debit, 0))}
                   </td>
