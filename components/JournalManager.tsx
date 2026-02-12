@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { Asset, JournalEntry, AssetCategory, AssetLocation } from '../types';
 import { calculateDepreciation } from '../services/assetService';
@@ -36,54 +35,74 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
     const end = endOfMonth(new Date(year, month - 1));
     const entries: JournalEntry[] = [];
 
+    // Consolidation map: categoryId-branchId -> aggregated movements
+    const consolidatedMovements: Record<string, { periodicDepr: number, additions: number, categoryId: string, branchId: string }> = {};
+
     filteredAssets.forEach(asset => {
       const calc = calculateDepreciation(asset, start, end, categories);
-      const category = categories.find(c => c.id === asset.categoryId);
+      const key = `${asset.categoryId}-${asset.branchId}`;
+      
+      if (!consolidatedMovements[key]) {
+        consolidatedMovements[key] = { 
+          periodicDepr: 0, 
+          additions: 0, 
+          categoryId: asset.categoryId, 
+          branchId: asset.branchId 
+        };
+      }
+      
+      consolidatedMovements[key].periodicDepr += calc.periodicDepr;
+      consolidatedMovements[key].additions += calc.additions;
+    });
+
+    // Create journal entries from consolidated movements
+    Object.values(consolidatedMovements).forEach(movement => {
+      const category = categories.find(c => c.id === movement.categoryId);
       if (!category) return;
 
-      if (calc.periodicDepr > 0) {
+      if (movement.periodicDepr > 0) {
         entries.push({
-          id: `depr-${asset.id}`,
+          id: `depr-${movement.categoryId}-${movement.branchId}`,
           date: format(end, 'yyyy-MM-dd'),
           accountName: `Depr Expense: ${category.name}`,
           accountCode: category.glCodeDeprExpense,
-          description: `Daily Depr Charge - ${asset.assetNumber} (${selectedMonth})`,
-          debit: calc.periodicDepr,
+          description: `Consolidated Monthly Depr - ${category.name}`,
+          debit: movement.periodicDepr,
           credit: 0,
-          branchId: asset.branchId
+          branchId: movement.branchId
         });
         entries.push({
-          id: `accum-${asset.id}`,
+          id: `accum-${movement.categoryId}-${movement.branchId}`,
           date: format(end, 'yyyy-MM-dd'),
           accountName: `Accum Depr: ${category.name}`,
           accountCode: category.glCodeAccumDepr,
-          description: `Daily Depr Charge - ${asset.assetNumber} (${selectedMonth})`,
+          description: `Consolidated Monthly Depr - ${category.name}`,
           debit: 0,
-          credit: calc.periodicDepr,
-          branchId: asset.branchId
+          credit: movement.periodicDepr,
+          branchId: movement.branchId
         });
       }
 
-      if (calc.additions > 0) {
+      if (movement.additions > 0) {
         entries.push({
-          id: `add-${asset.id}`,
+          id: `add-${movement.categoryId}-${movement.branchId}`,
           date: format(end, 'yyyy-MM-dd'),
           accountName: `Asset Cost: ${category.name}`,
           accountCode: category.glCodeCost,
-          description: `Acquisition - ${asset.assetNumber}`,
-          debit: calc.additions,
+          description: `Consolidated Monthly Additions - ${category.name}`,
+          debit: movement.additions,
           credit: 0,
-          branchId: asset.branchId
+          branchId: movement.branchId
         });
         entries.push({
-          id: `pay-${asset.id}`,
+          id: `pay-${movement.categoryId}-${movement.branchId}`,
           date: format(end, 'yyyy-MM-dd'),
           accountName: `Accounts Payable / Bank`,
           accountCode: '2000/001',
-          description: `Acquisition - ${asset.assetNumber}`,
+          description: `Consolidated Monthly Additions - ${category.name}`,
           debit: 0,
-          credit: calc.additions,
-          branchId: asset.branchId
+          credit: movement.additions,
+          branchId: movement.branchId
         });
       }
     });
@@ -102,11 +121,16 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
       Credit: j.credit.toFixed(2)
     })));
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "GL Journals");
-    XLSX.writeFile(wb, `Journals_${selectedMonth}_${selectedBranch === 'all' ? 'CONSOLIDATED' : 'BRANCH'}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "Consolidated GL Journals");
+    XLSX.writeFile(wb, `Consolidated_Journals_${selectedMonth}_${selectedBranch === 'all' ? 'FULL' : 'BRANCH'}.xlsx`);
   };
 
-  const currencyFormatter = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' });
+  const currencyFormatter = new Intl.NumberFormat('en-ZA', { 
+    style: 'currency', 
+    currency: 'ZAR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -116,8 +140,8 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
             <BookText size={24} />
           </div>
           <div>
-            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">General Ledger Journals</h2>
-            <p className="text-xs text-slate-500 font-medium">Automated IFRS movements for period: {selectedMonth}</p>
+            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Consolidated GL Journals</h2>
+            <p className="text-xs text-slate-500 font-medium">Aggregated movements by Asset Class for: {selectedMonth}</p>
           </div>
         </div>
         
@@ -129,7 +153,7 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
               value={selectedBranch}
               onChange={(e) => setSelectedBranch(e.target.value)}
             >
-              <option value="all">CONSOLIDATED</option>
+              <option value="all">CONSOLIDATED VIEW</option>
               {branches.map(b => (
                 <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>
               ))}
@@ -139,7 +163,7 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
             onClick={exportJournals}
             className="bg-[#1e3a5f] text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:bg-blue-900 transition-all shadow-lg shadow-blue-100"
           >
-            <Download size={16} /> Export
+            <Download size={16} /> Export Consolidated
           </button>
         </div>
       </div>
@@ -151,7 +175,7 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
               <tr>
                 <th className="px-6 py-5 text-left">Date</th>
                 <th className="px-6 py-5 text-left">Account</th>
-                <th className="px-6 py-5 text-left">Reference / Description</th>
+                <th className="px-6 py-5 text-left">Consolidated Description</th>
                 {selectedBranch === 'all' && <th className="px-6 py-5 text-left">Branch</th>}
                 <th className="px-6 py-5 text-right">Debit</th>
                 <th className="px-6 py-5 text-right">Credit</th>
@@ -163,7 +187,7 @@ const JournalManager: React.FC<JournalManagerProps> = ({ assets, categories, loc
                   <td colSpan={selectedBranch === 'all' ? 6 : 5} className="px-6 py-24 text-center">
                     <div className="flex flex-col items-center gap-4 text-slate-300">
                       <Calculator size={64} strokeWidth={1} />
-                      <p className="font-black uppercase tracking-widest text-[10px]">No journal activity for selected criteria</p>
+                      <p className="font-black uppercase tracking-widest text-[10px]">No consolidated activity found</p>
                     </div>
                   </td>
                 </tr>
