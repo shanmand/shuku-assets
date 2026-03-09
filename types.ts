@@ -1,317 +1,147 @@
 
-export enum UserRole {
-  ADMIN = 'System Administrator',
-  MANAGER = 'Crates Manager',
-  STAFF = 'Crates Department',
-  EXECUTIVE = 'Dashboard Viewer'
+export enum DepreciationMethod {
+  STRAIGHT_LINE = 'Straight Line',
+  REDUCING_BALANCE = 'Reducing Balance',
 }
 
-export type Permission = 
-  | 'MANAGE_FEES' 
-  | 'MANAGE_USERS' 
-  | 'APPROVE_CLAIMS' 
-  | 'VIEW_SETTLEMENT' 
-  | 'WRITE_MOVEMENTS' 
-  | 'VERIFY_RECEIPTS'
-  | 'MANAGE_LOSSES'
-  | 'VIEW_DASHBOARD'
-  | 'VIEW_AUDIT_LOGS';
-
-export enum LocationType {
-  CRATES_DEPT = 'Crates Dept',
-  WAREHOUSE = 'Warehouse',
-  COLD_STORAGE = 'Cold Storage',
-  AT_CUSTOMER = 'At Customer',
-  IN_TRANSIT = 'In Transit',
-  RETURNING = 'Returning to Supplier',
-  LOST = 'Lost/Written Off'
+export enum TaxStrategy {
+  STANDARD_FLAT = 'Standard Flat Rate (Pro-rated)',
+  SARS_12C_40_20 = 'SARS Sec 12C (40/20/20/20)',
+  SARS_12B_50_30_20 = 'SARS Sec 12B (50/30/20)',
+  SARS_FULL_100 = 'SARS Full Write-off (100%)',
+  SARS_13_5 = 'SARS Sec 13 (5% Straight Line)',
 }
 
-export enum PartnerType {
-  INTERNAL = 'Internal',
-  CUSTOMER = 'Customer',
-  SUPPLIER = 'Supplier'
+export enum AssetStatus {
+  ACTIVE = 'Active',
+  DISPOSED = 'Disposed',
+  SCRAPPED = 'Scrapped',
+  IMPAIRED = 'Impaired',
 }
 
-export enum BillingModel {
-  DAILY_RENTAL = 'Daily Rental (Supermarket)',
-  ISSUE_FEE = 'Issue Fee (QSR)',
-  NONE = 'None'
+export enum TransactionType {
+  ACQUISITION = 'Acquisition',
+  TRANSFER = 'Transfer',
+  DISPOSAL = 'Disposal',
+  SCRAP = 'Scrap',
+  MAINTENANCE = 'Maintenance',
+  INSPECTION = 'Inspection',
+  REVALUATION = 'Revaluation',
+  IMPAIRMENT = 'Impairment'
 }
 
-export enum OwnershipType {
-  INTERNAL = 'Internal',
-  EXTERNAL = 'External'
-}
+export type LocationType = 'Branch' | 'Location' | 'Sublocation';
 
-export enum LocationCategory {
-  HOME = 'Home',
-  EXTERNAL = 'External'
-}
-
-export enum AssetType {
-  CRATE = 'Crate',
-  PALLET = 'Pallet'
-}
-
-export enum FeeType {
-  DAILY_RENTAL = 'Daily Rental (Supermarket)',
-  ISSUE_FEE = 'Issue Fee (QSR)',
-  REPLACEMENT_FEE = 'Replacement Fee (Lost Equipment)',
-  SALVAGE_CREDIT = 'Salvage Credit (Scrapped Assets)'
-}
-
-export enum LossType {
-  MISSING = 'Missing/Lost',
-  SCRAPPED = 'Scrapped (Unrepairable)',
-  CUSTOMER_LIABLE = 'Customer Liable',
-  STOCK_TAKE_VARIANCE = 'Stock Take Variance'
-}
-
-export enum MovementCondition {
-  CLEAN = 'Clean',
-  DIRTY = 'Dirty',
-  DAMAGED = 'Damaged'
-}
-
-export type ClaimStatus = 'Lodged' | 'Under Assessment' | 'Returned for Assessment' | 'Accepted' | 'Rejected';
-
-export interface User {
+export interface AssetLocation {
   id: string;
   name: string;
-  role: UserRole;
-  branch_id: string; // e.g., 'LOC-JHB-01'
-}
-
-export interface AssetMaster {
-  id: string;
-  name: string;
-  type: AssetType;
-  dimensions: string;
-  material: string;
-  billing_model: BillingModel;
-  ownership_type: OwnershipType;
-  supplier_id?: string;
-  is_internal?: boolean;
-  fee_type?: string;
-}
-
-export interface FeeSchedule {
-  id: string;
-  asset_id: string;
-  fee_type: FeeType;
-  amount_zar: number;
-  effective_from: string; // ISO Date
-  effective_to: string | null; // NULL means currently active
-  is_active?: boolean; // NEW: For admin bulk management
-}
-
-export interface Branch {
-  id: string;
-  name: string;
-  created_at?: string;
-}
-
-export interface Location {
-  id: string;
-  name: string;
+  code: string;
   type: LocationType;
-  category: LocationCategory;
-  branch_id?: string;
-  partner_type: PartnerType;
+  parentId?: string;
 }
 
-export interface Truck {
+export interface AssetCategory {
   id: string;
-  plate_number: string;
-  model?: string;
-  capacity?: number;
-  created_at?: string;
+  name: string;
+  defaultUsefulLife: number;
+  defaultTaxRate: number;
+  residualPercentage: number;
+  taxStrategy: TaxStrategy;
+  glCodeCost: string;
+  glCodeAccumDepr: string;
+  glCodeDeprExpense: string;
+  glCodeRevaluationSurplus?: string;
 }
 
-export interface Driver {
+export interface RevaluationEvent {
   id: string;
-  full_name: string;
-  license_number?: string;
-  phone?: string;
-  contact_number?: string;
-  created_at?: string;
+  date: string;
+  newFairValue: number;
+  reason: string;
 }
 
-export interface Batch {
+export interface AssetComponent {
   id: string;
-  asset_id: string;
-  quantity: number;
-  current_location_id: string;
-  created_at: string;
-  status: 'Pending' | 'Success' | 'Lost' | 'In-Transit' | 'Settled';
-  is_settled?: boolean;
-  settled_at?: string;
-  transaction_date?: string;
-  transfer_confirmed_by_customer?: boolean;
-  confirmation_date?: string;
+  name: string;
+  acquisitionDate: string;
+  cost: number;
+  residualValue: number;
+  usefulLifeYears: number;
+  taxRate: number;
+  status: AssetStatus;
+  disposalDate?: string;
+  disposalProceeds?: number;
+  supplierName?: string;
+  supplierContact?: string;
+  invoiceNumber?: string;
+  revaluations?: RevaluationEvent[];
+  impairmentLoss?: number;
 }
 
-export interface BatchMovement {
+export interface Asset {
   id: string;
-  batch_id: string;
-  from_location_id: string;
-  to_location_id: string;
-  truck_id?: string;
-  driver_id?: string;
-  timestamp: string;
-  condition: MovementCondition;
-  origin_user_id: string;
-  transaction_date?: string;
+  assetNumber: string;
+  tagId: string;
+  name: string;
+  description: string;
+  categoryId: string;
+  branchId: string;
+  locationId: string;
+  subLocationId: string;
+  status: AssetStatus;
+  components: AssetComponent[];
 }
 
-export interface LogisticsTrace {
-  movement_id: string;
-  batch_id: string;
-  transaction_date: string;
-  timestamp: string;
-  driver_name: string;
-  quantity: number;
-  to_location_name: string;
-  to_location_id: string;
-  from_location_name: string;
-  truck_plate: string;
-  condition: MovementCondition;
-  custodian_branch_id: string;
+export interface DatabaseConfig {
+  enabled: boolean;
+  supabaseUrl: string;
+  supabaseKey: string;
+  lastSync?: string;
 }
 
-export interface BatchVerification {
-  id: string;
-  batch_id: string;
-  verified_by: string; // User ID
-  received_quantity: number;
-  expected_quantity: number;
-  variance: number;
-  timestamp: string;
-  notes: string;
-}
-
-export interface ThaanSlip {
-  id: string;
-  batch_id: string;
-  doc_url: string;
-  is_signed: boolean;
-  signed_at: string | null;
-}
-
-export interface Claim {
-  id: string;
-  batch_id: string;
-  truck_id: string;
-  driver_id: string;
-  thaan_slip_id: string;
-  type: 'Damaged' | 'Dirty';
-  amount_claimed_zar: number;
-  status: ClaimStatus;
-  created_at: string;
-  settled_at?: string;
-}
-
-export interface AssetLoss {
-  id: string;
-  batch_id: string;
-  loss_type: LossType;
-  lost_quantity: number;
-  last_known_location_id: string;
-  last_driver_name?: string;
-  last_truck_plate?: string;
-  last_thaan_url?: string;
-  reported_by: string; // User ID
-  timestamp: string;
-  transaction_date?: string;
-  notes: string;
-  supplier_notified: boolean;
-  supplier_invoice_ref?: string;
-  is_rechargeable: boolean;
-}
-
-export interface ClaimAudit {
-  id: string;
-  claim_id: string;
-  status_from: ClaimStatus | 'None';
-  status_to: ClaimStatus;
-  updated_by: string;
-  timestamp: string;
-  notes?: string;
-}
-
-export interface InventoryRecord {
-  location_id: string;
-  asset_id: string;
-  quantity: number;
+export interface DepreciationCalculation {
+  assetId: string;
+  openingCost: number;
+  additions: number;
+  disposals: number;
+  revaluations: number;
+  impairments: number;
+  closingCost: number;
+  openingAccumulatedDepr: number;
+  periodicDepr: number;
+  accumulatedDeprOnDisposals: number;
+  closingAccumulatedDepr: number;
+  nbv: number;
+  taxValue: number;
+  taxDeductionForPeriod: number;
+  openingAccumulatedTaxDepr: number;
+  taxDeprOnDisposals: number;
+  closingAccumulatedTaxDepr: number;
+  taxYearOfAsset: number;
+  profitOnDisposal?: number;
+  recoupment?: number;
 }
 
 export interface AuditLog {
   id: string;
-  entity_id: string;
-  entity_type: 'Batch' | 'Fee' | 'Claim' | 'Verification';
-  action: string;
-  old_value: string;
-  new_value: string;
-  user_id: string;
   timestamp: string;
+  userId: string;
+  assetId: string;
+  action: string;
+  changes: {
+    field: string;
+    oldValue: any;
+    newValue: any;
+  }[];
 }
 
-export interface Task {
+export interface JournalEntry {
   id: string;
-  title: string;
-  description?: string;
-  status: 'Pending' | 'In Progress' | 'Completed';
-  priority: 'Low' | 'Medium' | 'High';
-  due_date: string;
-  assigned_to?: string;
-  created_at: string;
-}
-
-export interface StockTake {
-  id: string;
-  location_id: string;
-  take_date: string;
-  performed_by: string;
-  notes?: string;
-  created_at: string;
-}
-
-export interface StockTakeItem {
-  id: string;
-  stock_take_id: string;
-  asset_id: string;
-  system_quantity: number;
-  physical_count: number;
-  variance: number;
-}
-
-export interface Settlement {
-  id: string;
-  supplier_id: string;
-  start_date: string;
-  end_date: string;
-  gross_liability: number;
-  discount_amount: number;
-  net_payable: number;
-  settled_by: string;
-  created_at: string;
-}
-
-export interface BusinessParty {
-  id: string;
-  name: string;
-  party_type: 'Customer' | 'Supplier';
-  contact_person?: string;
-  email?: string;
-  phone?: string;
-  created_at: string;
-}
-
-export interface Discount {
-  id: string;
-  settlement_id: string;
-  amount: number;
-  reason: string;
-  created_at: string;
+  date: string;
+  accountName: string;
+  accountCode: string;
+  description: string;
+  debit: number;
+  credit: number;
+  branchId: string;
 }
